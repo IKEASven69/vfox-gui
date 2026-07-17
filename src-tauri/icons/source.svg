@@ -1,0 +1,46 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <!--
+    vfox-gui app icon — abstract fox + version-switch motif.
+    Solid fills only for broad SVG-renderer compatibility (resvg via tauri icon).
+    Blue rounded-square tile + orange geometric fox face (pointed ears, snout)
+    + a version-switch arrow glyph in the lower-right.
+  -->
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#0a84ff"/>
+      <stop offset="1" stop-color="#0058d4"/>
+    </linearGradient>
+    <linearGradient id="fur" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ffb347"/>
+      <stop offset="1" stop-color="#ff7a1a"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Tile background (rounded square). -->
+  <rect width="1024" height="1024" rx="227" ry="227" fill="url(#bg)"/>
+
+  <!-- Fox face: two pointed ears + a rounded head. -->
+  <path d="M300 300 L372 470 L210 452 Z" fill="url(#fur)"/>
+  <path d="M724 300 L814 452 L652 470 Z" fill="url(#fur)"/>
+  <path d="M512 372 C612 372 706 470 706 600 C706 740 618 806 512 806
+           C406 806 318 740 318 600 C318 470 412 372 512 372 Z" fill="url(#fur)"/>
+  <!-- White muzzle -->
+  <path d="M512 612 C566 612 606 660 606 712 C606 766 566 790 512 790
+           C458 790 418 766 418 712 C418 660 458 612 512 612 Z" fill="#fff5e6"/>
+  <!-- Eyes -->
+  <circle cx="418" cy="566" r="34" fill="#1c1300"/>
+  <circle cx="606" cy="566" r="34" fill="#1c1300"/>
+  <circle cx="428" cy="556" r="11" fill="#ffffff"/>
+  <circle cx="616" cy="556" r="11" fill="#ffffff"/>
+  <!-- Nose -->
+  <path d="M512 636 L548 668 C554 686 538 700 512 700 C486 700 470 686 476 668 Z" fill="#1c1300"/>
+
+  <!-- Version-switch glyph: swap arrows in a chip, lower-right. -->
+  <circle cx="800" cy="800" r="150" fill="#003d99"/>
+  <g fill="none" stroke="#ffffff" stroke-width="34" stroke-linecap="round">
+    <path d="M740 772 A78 78 0 0 1 880 772"/>
+    <path d="M860 828 A78 78 0 0 1 720 828"/>
+  </g>
+  <path d="M880 772 L902 748 L858 740 Z" fill="#ffffff"/>
+  <path d="M720 828 L698 852 L742 860 Z" fill="#ffffff"/>
+</svg>
