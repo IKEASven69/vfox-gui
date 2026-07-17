@@ -1,0 +1,94 @@
+# Build signed installers + latest.json and publish them to GitHub Releases.
+# Triggered by pushing a tag like `v0.2.0`. The updater in the app points at
+# the `latest.json` produced here, so publishing a release is all users need
+# to receive the update.
+#
+# Required repository secrets (Settings → Secrets and variables → Actions):
+#   TAURI_SIGNING_PRIVATE_KEY          — contents of src-tauri/.tauri/vfox-gui.key
+#   TAURI_SIGNING_PRIVATE_KEY_PASSWORD — the password set when generating the key
+
+name: release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+jobs:
+  publish:
+    permissions:
+      contents: write
+    runs-on: ${{ matrix.platform }}
+    strategy:
+      fail-fast: false
+      matrix:
+        # Build for the platforms you ship to. Trim this list if you only
+        # target one OS — each entry is a separate ~5min job.
+        platform:
+          - windows-latest
+          # - macos-latest
+          # - ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 11
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Rust cache
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri -> target
+
+      - name: Install Linux deps
+        if: matrix.platform == 'ubuntu-22.04'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
+
+      - name: Install JS deps
+        run: pnpm install --frozen-lockfile
+
+      # tauri-action builds, signs (needs the signing secrets), uploads the
+      # installers + .sig files to the GitHub Release for the pushed tag, and
+      # generates the latest.json manifest the updater fetches.
+      - uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        with:
+          tagName: ${{ github.ref_name }}
+          releaseName: "vfox-gui __VERSION__"
+          releaseDraft: false
+          prerelease: false
+          updaterJsonPreferNsis: true
+
+      # Build portable zip (Windows only) — the release binary is self-contained.
+      - name: Create portable zip
+        if: matrix.platform == 'windows-latest'
+        shell: pwsh
+        run: |
+          $version = "${{ github.ref_name }}" -replace '^v', ''
+          $exe = "src-tauri/target/release/vfox-gui.exe"
+          $zip = "vfox-gui-v$version-portable-x64.zip"
+
+          Compress-Archive -Path $exe -DestinationPath $zip -CompressionLevel Optimal
+
+          echo "portable=$zip" >> $env:GITHUB_ENV
+
+      - name: Upload portable zip to release
+        if: matrix.platform == 'windows-latest'
+        uses: softprops/action-gh-release@v2
+        with:
+          files: ${{ env.portable }}

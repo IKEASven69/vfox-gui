@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/vite.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>vfox — 版本管理器</title>
+    <!-- Apply the saved theme synchronously, before React mounts, to avoid a
+         flash of the wrong color scheme (FOUC). Must run in <head>. -->
+    <script>
+      (function () {
+        try {
+          var t = localStorage.getItem("vfox-theme");
+          if (t === "light" || t === "dark") {
+            document.documentElement.dataset.theme = t;
+          }
+        } catch (e) { /* localStorage may be unavailable */ }
+      })();
+    </script>
+  </head>
+
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>
