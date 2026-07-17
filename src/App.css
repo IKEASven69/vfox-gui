@@ -1,0 +1,258 @@
+@import "tailwindcss";
+
+/*
+ * macOS Sequoia Design System
+ *
+ * Evolution from the flat "System Settings" look to Sequoia's richer materials:
+ * - Sidebar uses deeper vibrancy (lower alpha + heavier blur + brightness)
+ * - Cards get soft layered shadows instead of relying purely on bg contrast
+ * - Larger, softer radii on small controls; consistent via --radius-* tokens
+ * - SF Pro Display for headings with optical sizing + tight negative tracking
+ * - Dark mode has real (subtle) depth via layered shadows, not flat black
+ * - A single accent blue remains; color still belongs to content (SDK glyphs)
+ */
+
+/* ── Light Theme (default) ── */
+:root {
+  /* Surfaces — Sequoia uses a warmer, deeper canvas with material tiers */
+  --bg: #f2f3f5;               /* slightly cooler/deeper than #f5f5f7 */
+  --sidebar: rgba(245, 245, 248, 0.62);  /* much more translucent → vibrancy */
+  --card: #ffffff;             /* card / primary surface */
+  --card-hover: #fafafc;       /* elevated / hover surface */
+  --card-elevated: #ffffff;    /* floating surfaces (progress bar, dropdowns) */
+  --card-secondary: #eef0f3;   /* recessed surface (progress strips, code blocks) */
+
+  /* Dividers */
+  --hairline: rgba(0, 0, 0, 0.07);
+  --hairline-strong: rgba(0, 0, 0, 0.12);
+
+  /* Text — Apple's canonical text stack */
+  --text: #1d1d1f;             /* primary ink */
+  --text-secondary: #55565c;
+  --text-tertiary: #86877f;
+
+  /* Accent — the only chromatic UI element */
+  --accent: #0071e3;           /* Electric Blue — filled CTAs only */
+  --accent-hover: #0058d0;     /* darker for real hover shift, not just opacity */
+  --accent-soft: rgba(0, 113, 227, 0.10);
+  --link-blue: #0066cc;        /* inline text links */
+
+  /* Semantic */
+  --success: #30b553;
+  --success-soft: rgba(48, 181, 83, 0.14);
+  --danger: #e0353b;
+  --danger-soft: rgba(224, 53, 59, 0.10);
+  --ember: #b64400;            /* warm orange badge */
+
+  /* Pastel finishes (for SDK icon accents) */
+  --sky: #c8d8e0;
+  --citrus: #dddc8c;
+  --starlight: #f0e4d3;
+  --silver: #e3e4e5;
+  --blush: #e8d0d0;
+  --indigo: #596680;
+  --midnight: #2e3642;
+
+  /* Spacing scale (4px base) */
+  --space-4: 4px;
+  --space-8: 8px;
+  --space-12: 12px;
+  --space-16: 16px;
+  --space-20: 20px;
+  --space-24: 24px;
+  --space-28: 28px;
+  --space-32: 32px;
+  --space-40: 40px;
+  --space-48: 48px;
+  --space-56: 56px;
+
+  /* Radii — Sequoia uses softer, larger corners everywhere */
+  --radius-xs: 6px;            /* tiny dots/badges */
+  --radius-sm: 10px;           /* inputs, list rows, icon glyphs */
+  --radius-md: 12px;           /* small cards, footer buttons */
+  --radius-lg: 16px;           /* large icon badges */
+  --radius-card: 18px;         /* grouped list cards (was 28 — too round) */
+  --radius-pill: 980px;
+
+  /* Shadows — Sequoia reintroduces subtle layered depth */
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.05), 0 1px 3px rgba(0, 0, 0, 0.04);
+  --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.04), 0 6px 20px rgba(0, 0, 0, 0.06);
+  --shadow-overlay: 0 8px 32px rgba(0, 0, 0, 0.14), 0 2px 8px rgba(0, 0, 0, 0.08);
+
+  /* Typography scale */
+  --text-caption: 11px;
+  --text-caption-lh: 1.3;
+  --text-body-sm: 13px;
+  --text-body-sm-lh: 1.4;
+  --text-body: 17px;
+  --text-body-lh: 1.47;
+  --text-heading-sm: 22px;
+  --text-heading-sm-lh: 1.2;
+  --text-heading: 28px;
+  --text-heading-lh: 1.14;
+
+  /* Fonts — display (headings) vs text (body) */
+  --font-display: "SF Pro Display", -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+  --font-text: "SF Pro Text", -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, system-ui, sans-serif;
+
+  /* Tracking — Sequoia tightens large display text */
+  --tracking-tight: -0.022em;
+  --tracking-display: -0.018em;
+}
+
+/* ── Dark Theme ── */
+[data-theme="dark"] {
+  --bg: #161617;               /* deeper than #1c1c1e for real depth */
+  --sidebar: rgba(34, 34, 36, 0.62);
+  --card: #262628;
+  --card-hover: #303032;
+  --card-elevated: #2c2c2e;
+  --card-secondary: #1c1c1e;
+  --hairline: rgba(255, 255, 255, 0.08);
+  --hairline-strong: rgba(255, 255, 255, 0.14);
+  --text: #f5f5f7;
+  --text-secondary: #a9a9b4;
+  --text-tertiary: #69696f;
+  --accent: #0a84ff;
+  --accent-hover: #3d9bff;
+  --accent-soft: rgba(10, 132, 255, 0.18);
+  --link-blue: #409cff;
+  --success: #30d158;
+  --success-soft: rgba(48, 209, 88, 0.18);
+  --danger: #ff453a;
+  --danger-soft: rgba(255, 69, 58, 0.12);
+  /* Sequoia dark keeps subtle shadows (was `none` — too flat) */
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
+  --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.5), 0 6px 20px rgba(0, 0, 0, 0.35);
+  --shadow-overlay: 0 8px 32px rgba(0, 0, 0, 0.55), 0 2px 8px rgba(0, 0, 0, 0.4);
+}
+
+/* ── System preference (no explicit data-theme) ── */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]):not([data-theme="dark"]) {
+    --bg: #161617;
+    --sidebar: rgba(34, 34, 36, 0.62);
+    --card: #262628;
+    --card-hover: #303032;
+    --card-elevated: #2c2c2e;
+    --card-secondary: #1c1c1e;
+    --hairline: rgba(255, 255, 255, 0.08);
+    --hairline-strong: rgba(255, 255, 255, 0.14);
+    --text: #f5f5f7;
+    --text-secondary: #a9a9b4;
+    --text-tertiary: #69696f;
+    --accent: #0a84ff;
+    --accent-hover: #3d9bff;
+    --accent-soft: rgba(10, 132, 255, 0.18);
+    --link-blue: #409cff;
+    --success: #30d158;
+    --success-soft: rgba(48, 209, 88, 0.18);
+    --danger: #ff453a;
+    --danger-soft: rgba(255, 69, 58, 0.12);
+    --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
+    --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.5), 0 6px 20px rgba(0, 0, 0, 0.35);
+    --shadow-overlay: 0 8px 32px rgba(0, 0, 0, 0.55), 0 2px 8px rgba(0, 0, 0, 0.4);
+  }
+}
+
+/* ── Global Reset ── */
+html, body, #root {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  font-family: var(--font-text);
+  font-size: var(--text-body-sm);
+  line-height: var(--text-body-sm-lh);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  background: var(--bg);
+  color: var(--text);
+  user-select: none;
+  font-feature-settings: "kern" 1, "liga" 1;
+  /* Enable SF Pro variable-font optical sizing (Sequoia hallmark) */
+  font-optical-sizing: auto;
+}
+
+/* Headings use the Display family + tight tracking for the Sequoia look */
+h1, h2, h3 {
+  font-family: var(--font-display);
+  letter-spacing: var(--tracking-display);
+  font-optical-sizing: auto;
+}
+
+code {
+  font-family: "SF Mono", "JetBrains Mono", "Cascadia Code", Consolas, monospace;
+  font-size: 0.92em;
+  user-select: text;
+}
+
+/* ── macOS Sequoia scrollbars (slightly chunkier, auto-hide feel) ── */
+*::-webkit-scrollbar { width: 8px; height: 8px; }
+*::-webkit-scrollbar-thumb {
+  background: var(--hairline-strong);
+  border-radius: 4px;
+  border: 2px solid transparent;
+  background-clip: content-box;
+}
+*::-webkit-scrollbar-thumb:hover { background: var(--text-tertiary); background-clip: content-box; }
+*::-webkit-scrollbar-track { background: transparent; }
+
+/* ── Animations ── */
+@keyframes vfox-spin {
+  to { transform: rotate(360deg); }
+}
+.vfox-spin {
+  animation: vfox-spin 0.7s linear infinite;
+}
+
+/* Sequoia modal enter: slightly springier (scale + blur-in feel) */
+@keyframes modal-enter {
+  from { opacity: 0; transform: scale(0.96) translateY(6px); }
+  to   { opacity: 1; transform: scale(1) translateY(0); }
+}
+.modal-enter {
+  animation: modal-enter 0.22s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+/* Sequoia card enter: subtle fade+rise for grouped lists */
+@keyframes card-enter {
+  from { opacity: 0; transform: translateY(4px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.card-enter {
+  animation: card-enter 0.28s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+/* Apple-style focus ring: only visible on keyboard navigation, invisible on click. */
+*:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: var(--radius-xs);
+}
+
+/* Smooth hover transitions on all interactive elements */
+button, a, input, select {
+  transition: background-color 0.18s cubic-bezier(0.2, 0.8, 0.2, 1),
+              opacity 0.18s ease, color 0.18s ease, border-color 0.18s ease;
+}
+
+/* ── Sidebar vibrancy — Sequoia's signature frosted material.
+   Heavier blur + brightness approximates NSVisualEffectView. ── */
+@media (prefers-reduced-transparency: no-preference) {
+  aside {
+    backdrop-filter: blur(40px) saturate(180%) brightness(1.06);
+    -webkit-backdrop-filter: blur(40px) saturate(180%) brightness(1.06);
+  }
+}
+
+/* ── Reduced motion ── */
+@media (prefers-reduced-motion: reduce) {
+  .vfox-spin { animation-duration: 1.6s; }
+  *, *::before, *::after {
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+  }
+}
+
