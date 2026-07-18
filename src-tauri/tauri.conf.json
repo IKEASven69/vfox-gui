@@ -25,7 +25,7 @@
   },
   "bundle": {
     "active": true,
-    "targets": ["nsis"],
+    "targets": ["nsis", "app", "dmg", "deb", "appimage"],
     "createUpdaterArtifacts": true,
     "icon": [
       "icons/32x32.png",
@@ -45,9 +45,9 @@
   "plugins": {
     "updater": {
       "active": true,
-      "endpoints": [
-        "https://github.com/IKEASven69/vfox-gui/releases/latest/download/latest.json"
-      ],
+        "endpoints": [
+          "https://github.com/IKEASven69/vfox-gui/releases/latest/download/latest.json"
+        ],
       "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEFFNkI0NEYzNUEzQkFDNDkKUldSSnJEdGE4MFJycm40Uk5CUUN2c3M5cnB4VGFIdWJxeEFXU01KTFRXRmtmWHU2dUlNZWxzejkK",
       "dialog": true
     }

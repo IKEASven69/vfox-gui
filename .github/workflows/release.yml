@@ -6,6 +6,9 @@
 # Required repository secrets (Settings → Secrets and variables → Actions):
 #   TAURI_SIGNING_PRIVATE_KEY          — contents of src-tauri/.tauri/vfox-gui.key
 #   TAURI_SIGNING_PRIVATE_KEY_PASSWORD — the password set when generating the key
+#   (macOS only) APPLE_CERTIFICATE, APPLE_CERTIFICATE_PASSWORD,
+#                APPLE_SIGNING_IDENTITY, APPLE_ID, APPLE_PASSWORD,
+#                APPLE_TEAM_ID — for signing + notarization
 
 name: release
 
@@ -26,8 +29,8 @@ jobs:
         # target one OS — each entry is a separate ~5min job.
         platform:
           - windows-latest
-          # - macos-latest
-          # - ubuntu-22.04
+          - macos-latest
+          - ubuntu-22.04
     steps:
       - uses: actions/checkout@v4
 
@@ -59,6 +62,26 @@ jobs:
       - name: Install JS deps
         run: pnpm install --frozen-lockfile
 
+      # Import Apple code-signing certificate (macOS only). The cert is a
+      # base64-encoded .p12 stored in the APPLE_CERTIFICATE secret.
+      - name: Import Apple certificate
+        if: matrix.platform == 'macos-latest'
+        env:
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+        run: |
+          if [ -z "$APPLE_CERTIFICATE" ]; then
+            echo "::warning::APPLE_CERTIFICATE not set — macOS build will be unsigned (users get Gatekeeper warnings)."
+            exit 0
+          fi
+          echo "$APPLE_CERTIFICATE" | base64 --decode > cert.p12
+          security create-keychain -p "" build.keychain
+          security default-keychain -s build.keychain
+          security unlock-keychain -p "" build.keychain
+          security import cert.p12 -k build.keychain -P "$APPLE_CERTIFICATE_PASSWORD" -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple: -s -k "" build.keychain
+          rm cert.p12
+
       # tauri-action builds, signs (needs the signing secrets), uploads the
       # installers + .sig files to the GitHub Release for the pushed tag, and
       # generates the latest.json manifest the updater fetches.
@@ -67,12 +90,16 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          # macOS signing + notarization (only used on macos-latest)
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         with:
           tagName: ${{ github.ref_name }}
           releaseName: "vfox-gui __VERSION__"
           releaseDraft: false
           prerelease: false
-          updaterJsonPreferNsis: true
 
       # Build portable zip (Windows only) — the release binary is self-contained.
       - name: Create portable zip
