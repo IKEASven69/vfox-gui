@@ -13,9 +13,9 @@
     "windows": [
       {
         "title": "vfox — 版本管理器",
-        "width": 880,
-        "height": 600,
-        "minWidth": 640,
+        "width": 1100,
+        "height": 640,
+        "minWidth": 760,
         "minHeight": 460
       }
     ],

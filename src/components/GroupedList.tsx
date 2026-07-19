@@ -12,12 +12,15 @@ export default function GroupedList({
 }) {
   return (
     <div
-      className="overflow-hidden card-enter"
+      className="card-enter"
       style={{
         borderRadius: "var(--radius-card)",
         background: "var(--card)",
         boxShadow: "var(--shadow-card)",
-        maxHeight: scrollable ? "20rem" : undefined,
+        // When scrollable, fill the flex parent and scroll internally so long
+        // lists scroll inside the card instead of pushing the whole window.
+        flex: scrollable ? "1 1 0%" : undefined,
+        minHeight: 0,
         overflowY: scrollable ? "auto" : undefined,
       }}
     >

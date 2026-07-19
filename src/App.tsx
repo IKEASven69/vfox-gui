@@ -96,8 +96,15 @@ export default function App() {
             ? c.name.includes(sdkQuery.trim().toLowerCase()) ||
               c.meta.name.toLowerCase().includes(sdkQuery.trim().toLowerCase())
             : true
-        ),
-    [catalog, sdkQuery]
+        )
+        // Installed SDKs first (most relevant), then alphabetical by display name.
+        .sort((a, b) => {
+          const aInst = installedMap.has(a.name) ? 0 : 1;
+          const bInst = installedMap.has(b.name) ? 0 : 1;
+          if (aInst !== bInst) return aInst - bInst;
+          return a.meta.name.localeCompare(b.meta.name);
+        }),
+    [catalog, sdkQuery, installedMap]
   );
 
   const filteredVersions = useMemo(() => {
@@ -428,7 +435,7 @@ export default function App() {
         onSnapshotRestored={refresh}
       />
 
-      <main className="flex-1 flex flex-col overflow-hidden">
+      <main className="flex-1 flex flex-col overflow-hidden min-h-0">
         {busyLabel && <ProgressBar label={busyLabel} install={installProgress} />}
 
         {view === "settings" ? (

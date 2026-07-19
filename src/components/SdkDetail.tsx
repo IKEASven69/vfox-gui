@@ -35,9 +35,9 @@ export default function SdkDetail({
   onUse, onInstall, onRemove, onRefresh, onRetry,
 }: Props) {
   return (
-    <>
+    <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
       {/* Header */}
-      <header className="px-8 pt-8 pb-5 flex items-center gap-4">
+      <header className="px-8 pt-8 pb-5 flex items-center gap-4 shrink-0">
         <IconBadge name={currentSdk.name} size="lg" />
         <div className="flex-1 min-w-0">
           <h2 className="text-[28px] font-semibold leading-tight" style={{ letterSpacing: "var(--tracking-tight)" }}>
@@ -70,18 +70,21 @@ export default function SdkDetail({
         </button>
       </header>
 
-      <div className="flex-1 overflow-y-auto px-8 pb-8 space-y-7">
-        {/* Installed versions */}
-        <section>
-          <div className="flex items-center justify-between mb-2">
-            <SectionLabel>已安装</SectionLabel>
+      {/* Content area: two side-by-side columns (已安装 | 可安装), each with its
+          own header + internally scrolling list. Both get full height — no more
+          squeezing. The whole window never scrolls. */}
+      <div className="flex-1 flex gap-5 px-8 pb-8 min-h-0">
+        {/* ── Left column: installed versions ── */}
+        <section className="flex flex-col min-h-0" style={{ flex: "1 1 0%", minWidth: 0 }}>
+          <div className="flex items-center justify-between mb-2 shrink-0">
+            <SectionLabel>已安装 ({currentSdk.installed.length})</SectionLabel>
             <ScopeSwitch value={versionScope} onChange={onScopeChange}
               projectPath={projectPath} onPickProject={onPickProject} />
           </div>
           {currentSdk.installed.length === 0 ? (
             <EmptyHint>尚未安装任何版本</EmptyHint>
           ) : (
-            <GroupedList>
+            <GroupedList scrollable>
               {currentSdk.installed.map((v) => {
                 const usage = diskUsage.find(
                   (d) => d.sdk === currentSdk.name && d.version === v.version
@@ -102,18 +105,20 @@ export default function SdkDetail({
           )}
         </section>
 
-        {/* Available versions */}
-        <section>
-          <SectionLabel>可安装</SectionLabel>
+        {/* ── Right column: available versions ── */}
+        <section className="flex flex-col min-h-0" style={{ flex: "1 1 0%", minWidth: 0 }}>
+          <div className="mb-2 shrink-0">
+            <SectionLabel>可安装</SectionLabel>
+          </div>
           <div
-            className="flex items-center gap-2 px-3 py-1.5 mb-2"
+            className="flex items-center gap-2 px-3 py-1.5 mb-2 shrink-0"
             style={{ background: "var(--card)", boxShadow: "var(--shadow-sm)", borderRadius: "var(--radius-sm)" }}
           >
             <span style={{ color: "var(--text-tertiary)", fontSize: 13 }}>🔍</span>
             <input
               value={versionQuery}
               onChange={(e) => onVersionQueryChange(e.target.value)}
-              placeholder="搜索版本（如 lts、20 lts、installed）…"
+              placeholder="搜索版本…"
               className="flex-1 bg-transparent outline-none text-[13px]"
               style={{ color: "var(--text)" }}
             />
@@ -129,6 +134,7 @@ export default function SdkDetail({
                   key={v.version}
                   version={v.version}
                   installed={v.installed}
+                  note={v.note}
                   busy={busy}
                   onInstall={() => onInstall(v.version)}
                 />
@@ -136,32 +142,32 @@ export default function SdkDetail({
             </GroupedList>
           )}
         </section>
-
-        {/* Error */}
-        {error && (
-          <div
-            className="px-4 py-3 text-[12px] flex items-start justify-between gap-3"
-            style={{ background: "var(--danger-soft)", color: "var(--danger)", borderRadius: "var(--radius-md)" }}
-          >
-            <pre className="whitespace-pre-wrap font-mono m-0 flex-1">{error}</pre>
-            <button
-              onClick={onRetry}
-              className="shrink-0 text-[12px] font-medium px-2.5 py-1 rounded-full"
-              style={{ background: "var(--danger)", color: "#fff" }}
-            >
-              重试
-            </button>
-          </div>
-        )}
-
-        {/* Project version history — only shown when a project dir is selected */}
-        {versionScope === "project" && projectPath && (
-          <section>
-            <ProjectHistory entries={history} />
-          </section>
-        )}
       </div>
-    </>
+
+      {/* Error banner — full width below the two columns */}
+      {error && (
+        <div
+          className="mx-8 mb-6 px-4 py-3 text-[12px] flex items-start justify-between gap-3 shrink-0"
+          style={{ background: "var(--danger-soft)", color: "var(--danger)", borderRadius: "var(--radius-md)" }}
+        >
+          <pre className="whitespace-pre-wrap font-mono m-0 flex-1">{error}</pre>
+          <button
+            onClick={onRetry}
+            className="shrink-0 text-[12px] font-medium px-2.5 py-1 rounded-full"
+            style={{ background: "var(--danger)", color: "#fff" }}
+          >
+            重试
+          </button>
+        </div>
+      )}
+
+      {/* Project version history — only shown when a project dir is selected */}
+      {versionScope === "project" && projectPath && (
+        <div className="mx-8 mb-6 shrink-0">
+          <ProjectHistory entries={history} />
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -191,7 +197,7 @@ const VersionRow = memo(function VersionRow({
 }) {
   return (
     <Row>
-      <div className="flex items-center gap-3">
+      <div className="flex items-center gap-3 min-w-0">
         <span
           className="w-2 h-2 rounded-full shrink-0"
           style={{
@@ -199,10 +205,10 @@ const VersionRow = memo(function VersionRow({
             opacity: isCurrent ? 1 : 0.35,
           }}
         />
-        <code className="text-[15px]">{version}</code>
+        <code className="text-[15px] truncate">{version}</code>
         {isCurrent && <Tag color="success">当前</Tag>}
       </div>
-      <div className="flex items-center gap-3">
+      <div className="flex items-center gap-2 shrink-0">
         {usage && usage.bytes > 0 && (
           <span className="text-[11px]" style={{ color: "var(--text-tertiary)" }}>
             {formatBytes(usage.bytes)}
@@ -220,16 +226,35 @@ const VersionRow = memo(function VersionRow({
 });
 
 const AvailableRow = memo(function AvailableRow({
-  version, installed, busy, onInstall,
+  version, installed, note, busy, onInstall,
 }: {
-  version: string; installed: boolean; busy: boolean; onInstall: () => void;
+  version: string; installed: boolean; note?: string; busy: boolean; onInstall: () => void;
 }) {
+  // The note from `vfox search` looks like "(lts) [npm 11.13.0] (installed)".
+  // Pull out the LTS / pre-release tags and the [npm ...] extra separately so
+  // we can style them distinctly instead of dumping a raw string.
+  const tags: string[] = [];
+  const npmMatch = note?.match(/\[(.*?)\]/);
+  if (note?.match(/\(lts\)|lts/i)) tags.push("LTS");
+  if (note?.match(/\(pre-release\)|pre-release/i)) tags.push("预发布");
+  const npm = npmMatch?.[1];
   return (
     <Row>
-      <div className="flex items-center gap-3">
-        <code className="text-[15px]">{version}</code>
+      <div className="flex items-center gap-2.5 min-w-0">
+        <code className="text-[15px] shrink-0">{version}</code>
+        {tags.map((t) => (
+          <span key={t} className="text-[10px] px-1.5 py-px font-medium shrink-0"
+            style={{ background: "var(--success-soft)", color: "var(--success)", borderRadius: "var(--radius-xs)" }}>
+            {t}
+          </span>
+        ))}
+        {npm && (
+          <span className="text-[11px] truncate" style={{ color: "var(--text-tertiary)" }}>
+            {npm}
+          </span>
+        )}
         {installed && (
-          <span className="text-[11px]" style={{ color: "var(--text-tertiary)" }}>已安装</span>
+          <span className="text-[11px] shrink-0" style={{ color: "var(--text-tertiary)" }}>已安装</span>
         )}
       </div>
       {!installed && (
