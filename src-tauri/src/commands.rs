@@ -68,31 +68,26 @@ pub async fn use_version(
     let proj_dir = project_path.clone();
 
     tauri::async_runtime::spawn_blocking(move || {
-        // Always run global use — this updates the Windows registry.
-        let result = run_vfox(&["use", &target, "--global"], /*tolerate_shell_err*/ true);
-
-        // For project scope, write .tool-versions ourselves. vfox's --project
-        // requires a shell hook (IsHookEnv), which a GUI process can't provide.
-        // Writing the file directly is more reliable. Surface write errors so
-        // the user knows the project pin didn't happen (was silently dropped).
+        // Project scope: ONLY write .tool-versions — do NOT touch the global
+        // version. The .tool-versions file is the standard project-level pin
+        // that IDEs and vfox-hooked shells read. Changing global here would
+        // contradict the UI promise "仅对该项目生效（不影响全局版本）".
         if is_project {
-            match proj_dir {
+            return match proj_dir {
                 Some(ref dir) => {
                     if let Err(e) = write_tool_versions(dir, &sdk, &version) {
-                        // Don't fail the whole command (global use succeeded),
-                        // but append a warning the frontend can show.
-                        return result.map(|ok| format!("{}\n⚠️ 项目 .tool-versions 写入失败: {}", ok, e));
+                        return Err(format!("项目 .tool-versions 写入失败: {}", e));
                     }
-                    // Record this version change in the project history so the
-                    // timeline view can show how the project's SDK versions
-                    // evolved. Errors here are non-fatal (best-effort logging).
+                    // Record this version change in the project history.
                     let _ = append_history(dir, &sdk, &version);
+                    Ok(format!("已为项目设置 {}@{}", sdk, version))
                 }
-                None => {
-                    return result.map(|ok| format!("{}\n⚠️ 未选择项目目录，跳过 .tool-versions 写入", ok));
-                }
-            }
+                None => Err("未选择项目目录".to_string()),
+            };
         }
+
+        // Global scope: run `vfox use --global` to update the registry/symlink.
+        let result = run_vfox(&["use", &target, "--global"], /*tolerate_shell_err*/ true);
 
         result
     })
@@ -411,7 +406,7 @@ pub struct DiskUsageEntry {
 #[tauri::command]
 pub async fn vfox_update() -> Result<String, String> {
     tauri::async_runtime::spawn_blocking(|| {
-        run_vfox(&["upgrade"], false)
+        run_vfox_with_timeout(&["upgrade"], false, Duration::from_secs(120))
     })
     .await
     .map_err(|e| format!("后台任务失败: {}", e))?
@@ -613,6 +608,16 @@ pub struct AvailableVersion {
 /// the output shows the version switch itself worked (the only failure being
 /// vfox's attempt to spawn a new shell, which can't happen in a GUI).
 fn run_vfox(args: &[&str], tolerate_shell_err: bool) -> Result<String, String> {
+    run_vfox_with_timeout(args, tolerate_shell_err, Duration::from_secs(60))
+}
+
+/// Same as `run_vfox` but with a custom timeout. Used by `vfox upgrade`
+/// (downloads the new binary — can be slow) which needs more than the default.
+fn run_vfox_with_timeout(
+    args: &[&str],
+    tolerate_shell_err: bool,
+    timeout: Duration,
+) -> Result<String, String> {
     // Build the command outside the thread so spawn errors surface directly.
     let mut cmd = Command::new("vfox");
     cmd.args(args)
@@ -668,9 +673,9 @@ fn run_vfox(args: &[&str], tolerate_shell_err: bool) -> Result<String, String> {
         let _ = tx.send(result);
     });
 
-    match rx.recv_timeout(Duration::from_secs(60)) {
+    match rx.recv_timeout(timeout) {
         Ok(result) => result,
-        Err(_) => Err("vfox 执行超时（60秒），可能卡住了。".to_string()),
+        Err(_) => Err(format!("vfox 执行超时（{}秒），可能卡住了。", timeout.as_secs())),
     }
 }
 
@@ -1164,6 +1169,15 @@ pub async fn save_snapshot(name: String, only_sdk: Option<String>) -> Result<Str
         // Only persist SDKs that have a current version — restoring one with
         // no selection would be a no-op anyway.
         sdks.retain(|s| s.current.is_some());
+        // Refuse to save an empty snapshot — it would lie to the user ("saved")
+        // and restore would do nothing. This happens when saving a single SDK
+        // that has versions installed but none currently selected.
+        if sdks.is_empty() {
+            return Err(match &only_sdk {
+                Some(s) => format!("无法保存：{} 没有当前选中的版本（先切换到一个版本再保存）", s),
+                None => "无法保存：没有已选中版本的 SDK".to_string(),
+            });
+        }
         let snap_dir = crate::vfox::vfox_home().join("snapshots");
         std::fs::create_dir_all(&snap_dir)
             .map_err(|e| format!("无法创建快照目录: {}", e))?;

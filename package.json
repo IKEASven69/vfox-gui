@@ -9,7 +9,8 @@
     "preview": "vite preview",
     "tauri": "tauri",
     "build:all": "tauri build",
-    "build:portable": "pwsh scripts/portable.ps1"
+    "build:portable": "pwsh scripts/portable.ps1",
+    "release": "node scripts/release.mjs"
   },
   "dependencies": {
     "@tauri-apps/api": "^2",
