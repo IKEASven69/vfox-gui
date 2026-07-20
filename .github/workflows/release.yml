@@ -63,6 +63,7 @@ jobs:
       # tauri.conf.json still says 0.2.1, the installer would be mislabeled and
       # the updater would silently break. Fail fast before building.
       - name: Verify tag version matches tauri.conf.json
+        shell: bash
         run: |
           TAG="${GITHUB_REF_NAME#v}"
           CONF=$(jq -r '.version' src-tauri/tauri.conf.json)
