@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { useTranslation } from "react-i18next";
 import ConfirmDialog from "./ConfirmDialog";
 
 interface SnapshotInfo {
@@ -19,6 +20,7 @@ interface Props {
  *  Two save modes: "current" stores just the selected SDK (restoring touches
  *  only it); "all" stores every SDK (restoring replays the full environment). */
 export default function SnapshotPanel({ busy, selectedSdk, onRestored }: Props) {
+  const { t } = useTranslation();
   const [snapshots, setSnapshots] = useState<SnapshotInfo[]>([]);
   const [saving, setSaving] = useState(false);
   const [name, setName] = useState("");
@@ -47,7 +49,7 @@ export default function SnapshotPanel({ busy, selectedSdk, onRestored }: Props) 
       setName("");
       await load();
     } catch (e) {
-      flash(`错误: ${e}`);
+      flash(String(e));
     } finally {
       setSaving(false);
     }
@@ -61,7 +63,7 @@ export default function SnapshotPanel({ busy, selectedSdk, onRestored }: Props) 
       // restored versions — without this the UI looks unchanged after restore.
       onRestored?.();
     } catch (e) {
-      flash(`恢复失败: ${e}`);
+      flash(t("snapshot.error", { error: String(e) }));
     } finally {
       setSaving(false);
     }
@@ -77,8 +79,8 @@ export default function SnapshotPanel({ busy, selectedSdk, onRestored }: Props) 
   return (
     <div className="px-4 py-3 border-b" style={{ borderColor: "var(--hairline)" }}>
       <p className="text-[10px] font-semibold uppercase tracking-wider mb-2" style={{ color: "var(--text-tertiary)" }}
-        title="保存当前 SDK 版本组合，日后一键恢复。单 SDK 快照恢复时只动那一个，全量快照恢复全部。">
-        环境快照
+        title={t("snapshot.saveHint")}>
+        {t("snapshot.saveTitle")}
       </p>
 
       {/* Save form — name on its own row, then two equal-width buttons below.
@@ -87,7 +89,7 @@ export default function SnapshotPanel({ busy, selectedSdk, onRestored }: Props) 
         value={name}
         onChange={(e) => setName(e.target.value)}
         onKeyDown={(e) => e.key === "Enter" && save("current")}
-        placeholder="快照名称…"
+        placeholder={t("sidebar.snapshotPlaceholder")}
         className="w-full bg-transparent outline-none text-[12px] px-2 py-1.5 rounded-[6px] mb-1.5"
         style={{ background: "var(--card)", color: "var(--text)" }}
         disabled={busy || saving}
@@ -98,18 +100,18 @@ export default function SnapshotPanel({ busy, selectedSdk, onRestored }: Props) 
           disabled={busy || saving || !name.trim() || !selectedSdk}
           className="flex-1 text-[11px] py-1.5 rounded-[6px] font-medium disabled:opacity-30 transition-opacity text-center"
           style={{ background: "var(--accent)", color: "#fff" }}
-          title={selectedSdk ? `仅保存当前选中的 ${selectedSdk}，恢复时只影响它` : "先在左侧选择一个 SDK"}
+          title={selectedSdk ? t("snapshot.saveSdkHint", { sdk: selectedSdk }) : t("snapshot.pickSdkHint")}
         >
-          保存当前 SDK
+           {t("snapshot.saveCurrent")}
         </button>
         <button
           onClick={() => save("all")}
           disabled={busy || saving || !name.trim()}
           className="flex-1 text-[11px] py-1.5 rounded-[6px] font-medium disabled:opacity-30 transition-opacity text-center"
           style={{ background: "transparent", color: "var(--text-secondary)", border: "1px solid var(--hairline-strong)" }}
-          title="保存所有已安装 SDK 的当前版本，恢复时还原全部"
+          title={t("snapshot.saveAllHint")}
         >
-          保存全部
+           {t("snapshot.saveAll")}
         </button>
       </div>
 
@@ -119,7 +121,7 @@ export default function SnapshotPanel({ busy, selectedSdk, onRestored }: Props) 
 
       {/* List */}
       {snapshots.length === 0 ? (
-        <p className="text-[11px] px-1" style={{ color: "var(--text-tertiary)" }}>暂无快照</p>
+        <p className="text-[11px] px-1" style={{ color: "var(--text-tertiary)" }}>{t("sidebar.noSnapshots")}</p>
       ) : (
         <div className="space-y-0.5 max-h-[120px] overflow-y-auto">
           {snapshots.map((s) => (
@@ -138,17 +140,17 @@ export default function SnapshotPanel({ busy, selectedSdk, onRestored }: Props) 
                 disabled={busy || saving}
                 className="text-[10px] px-1.5 py-0.5 rounded-full font-medium disabled:opacity-30 transition-opacity"
                 style={{ color: "var(--accent)" }}
-                title="恢复此快照"
+                title={t("snapshot.restoreHint")}
               >
-                恢复
+                {t("snapshot.restoreButton")}
               </button>
               <button
                 onClick={() => handleDelete(s.name)}
                 className="text-[10px] px-1.5 py-0.5 rounded-full font-medium opacity-50 hover:opacity-100 transition-opacity"
                 style={{ color: "var(--danger)" }}
-                title="删除快照"
+                title={t("sidebar.deleteSnapshot")}
               >
-                删除
+                {t("common.delete")}
               </button>
             </div>
           ))}
@@ -159,9 +161,9 @@ export default function SnapshotPanel({ busy, selectedSdk, onRestored }: Props) 
       {restoreConfirm && (
         <ConfirmDialog
           state={{
-            title: `恢复快照「${restoreConfirm}」`,
-            message: "将切换回快照保存时的版本。单 SDK 快照只影响该 SDK，全部快照会恢复所有 SDK。",
-            confirmLabel: "恢复",
+            title: t("snapshot.restoreConfirm") + `「${restoreConfirm}」`,
+            message: t("snapshot.restoreMessage"),
+            confirmLabel: t("snapshot.restoreButton"),
             destructive: false,
             pending: async () => { await doRestore(restoreConfirm); },
           }}

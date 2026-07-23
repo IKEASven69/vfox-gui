@@ -1,5 +1,7 @@
 import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { useTranslation } from "react-i18next";
+import i18n from "../i18n";
 import type { Theme } from "../constants";
 import ThemeSwitch from "./ThemeSwitch";
 import AppleButton from "./AppleButton";
@@ -16,6 +18,7 @@ interface Props {
 export default function SettingsPage({
   theme, onThemeChange, onCheckUpdate, onVfoxUpdate, busy,
 }: Props) {
+  const { t } = useTranslation();
   const [version, setVersion] = useState<{ app: string; vfox: string } | null>(null);
 
   useEffect(() => {
@@ -27,34 +30,38 @@ export default function SettingsPage({
   return (
     <div className="flex-1 overflow-y-auto px-8 py-8 space-y-7">
       <header>
-        <h2 className="text-[22px] font-semibold tracking-tight">设置</h2>
+        <h2 className="text-[22px] font-semibold tracking-tight">{t("settings.title")}</h2>
       </header>
 
       {/* Appearance */}
       <section>
-        <SectionLabel>外观</SectionLabel>
+        <SectionLabel>{t("settings.theme")}</SectionLabel>
         <Card>
-          <Row label="主题" hint="选择浅色、深色，或跟随系统">
+          <Row label={t("settings.themeLabel")} hint={t("settings.themeHint")}>
             <div className="w-48">
               <ThemeSwitch value={theme} onChange={onThemeChange} />
             </div>
+          </Row>
+          <Divider />
+          <Row label="Language / 语言" hint="English / 中文">
+            <LangSwitch />
           </Row>
         </Card>
       </section>
 
       {/* Updates */}
       <section>
-        <SectionLabel>更新</SectionLabel>
+        <SectionLabel>{t("settings.updates")}</SectionLabel>
         <Card>
-          <Row label="检查应用更新" hint="检查 vfox-gui 是否有新版本">
+          <Row label={t("settings.checkAppUpdate")} hint={t("settings.checkAppHint")}>
             <AppleButton variant="primary" disabled={busy} onClick={onCheckUpdate}>
-              检查更新
+              {t("sidebar.checkUpdate")}
             </AppleButton>
           </Row>
           <Divider />
-          <Row label="更新 vfox CLI" hint="升级 vfox 命令行工具到最新版本">
+          <Row label={t("settings.updateVfox")} hint={t("settings.updateVfoxHint")}>
             <AppleButton variant="ghost" disabled={busy} onClick={onVfoxUpdate}>
-              更新 vfox
+              {t("sidebar.updateVfox")}
             </AppleButton>
           </Row>
         </Card>
@@ -62,13 +69,13 @@ export default function SettingsPage({
 
       {/* About */}
       <section>
-        <SectionLabel>关于</SectionLabel>
+        <SectionLabel>{t("settings.about")}</SectionLabel>
         <Card>
-          <Row label="vfox-gui 版本">
+          <Row label={t("settings.vfoxGuiVersion")}>
             <code style={{ color: "var(--text-secondary)" }}>{version?.app ?? "…"}</code>
           </Row>
           <Divider />
-          <Row label="vfox 版本">
+          <Row label={t("settings.vfoxVersion")}>
             <code style={{ color: "var(--text-secondary)" }}>{version?.vfox ?? "…"}</code>
           </Row>
         </Card>
@@ -109,4 +116,28 @@ function Row({ label, hint, children }: { label: string; hint?: string; children
 
 function Divider() {
   return <div style={{ height: 1, background: "var(--hairline)", margin: "0 16px" }} />;
+}
+
+/** Small language toggle — English / 中文. */
+function LangSwitch() {
+  const current = i18n.language?.startsWith("en") ? "en" : "zh";
+  return (
+    <div className="flex rounded-[6px] p-0.5 text-[11px] font-medium w-[88px]"
+      style={{ background: "var(--card-secondary)", boxShadow: "var(--shadow-sm)" }}>
+      {(["zh", "en"] as const).map((l) => {
+        const active = current === l;
+        return (
+          <button key={l} onClick={() => i18n.changeLanguage(l)}
+            className="flex-1 px-2.5 py-0.5 rounded-[4px] transition-colors"
+            style={{
+              background: active ? "var(--card)" : "transparent",
+              color: active ? "var(--text)" : "var(--text-tertiary)",
+              boxShadow: active ? "var(--shadow-sm)" : "none",
+            }}>
+            {l === "zh" ? "中文" : "EN"}
+          </button>
+        );
+      })}
+    </div>
+  );
 }

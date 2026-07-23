@@ -1,4 +1,5 @@
 import { useEffect } from "react";
+import { useTranslation } from "react-i18next";
 import AppleButton from "./AppleButton";
 
 /** App self-update modal (tauri-plugin-updater). */
@@ -24,6 +25,9 @@ export default function UpdateModal({
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [state.kind, onClose]);
+
+  const { t } = useTranslation();
+
   return (
     <div
       className="fixed inset-0 flex items-center justify-center z-50"
@@ -38,13 +42,13 @@ export default function UpdateModal({
         {state.kind === "checking" && (
           <div className="flex flex-col items-center gap-3 py-2">
             <Spinner />
-            <p className="text-[14px]" style={{ color: "var(--text-secondary)" }}>正在检查更新…</p>
+            <p className="text-[14px]" style={{ color: "var(--text-secondary)" }}>{t("update.checking")}</p>
           </div>
         )}
         {state.kind === "none" && (
           <div className="flex flex-col items-center gap-3 py-2 text-center">
             <span className="text-[32px]">✅</span>
-            <p className="text-[14px]" style={{ color: "var(--text)" }}>已是最新版本</p>
+            <p className="text-[14px]" style={{ color: "var(--text)" }}>{t("update.upToDate")}</p>
           </div>
         )}
         {state.kind === "available" && (
@@ -53,7 +57,7 @@ export default function UpdateModal({
               <span className="text-[28px]">⬇️</span>
               <div>
                 <p className="text-[15px] font-semibold" style={{ color: "var(--text)" }}>
-                  发现新版本 <code style={{ color: "var(--accent)" }}>{state.version}</code>
+                  {t("update.newVersion")} <code style={{ color: "var(--accent)" }}>{state.version}</code>
                 </p>
               </div>
             </div>
@@ -66,8 +70,8 @@ export default function UpdateModal({
               </pre>
             )}
             <div className="flex justify-end gap-2 mt-1">
-              <AppleButton variant="ghost" onClick={onClose}>稍后</AppleButton>
-              <AppleButton variant="primary" onClick={onInstall}>下载并安装</AppleButton>
+              <AppleButton variant="ghost" onClick={onClose}>{t("update.later")}</AppleButton>
+              <AppleButton variant="primary" onClick={onInstall}>{t("update.downloadInstall")}</AppleButton>
             </div>
           </div>
         )}
@@ -76,7 +80,7 @@ export default function UpdateModal({
             <div className="flex items-center gap-2">
               <Spinner />
               <span className="text-[13px]" style={{ color: "var(--text-secondary)" }}>
-                正在下载并安装更新… {state.pct}%
+                {t("update.downloadingPct", { pct: String(state.pct) })}
               </span>
             </div>
             {/* Determinate bar — reuses the same look as the install ProgressBar. */}
@@ -84,20 +88,20 @@ export default function UpdateModal({
               <div className="h-full rounded-full transition-[width] duration-300 ease-out"
                 style={{ width: `${state.pct}%`, background: "var(--accent)" }} />
             </div>
-            <p className="text-[11px]" style={{ color: "var(--text-tertiary)" }}>完成后将自动重启应用</p>
+            <p className="text-[11px]" style={{ color: "var(--text-tertiary)" }}>{t("update.autoRestart")}</p>
           </div>
         )}
         {state.kind === "error" && (
           <div className="flex flex-col gap-3">
             <div className="flex items-center gap-2">
               <span className="text-[24px]">⚠️</span>
-              <p className="text-[14px] font-medium" style={{ color: "var(--danger)" }}>检查更新失败</p>
+              <p className="text-[14px] font-medium" style={{ color: "var(--danger)" }}>{t("update.checkFailed")}</p>
             </div>
             <pre className="text-[12px] whitespace-pre-wrap px-3 py-2 rounded-[8px]" style={{ background: "var(--card-secondary)", color: "var(--text-secondary)" }}>
               {state.msg}
             </pre>
             <div className="flex justify-end gap-2">
-              <AppleButton variant="ghost" onClick={onClose}>关闭</AppleButton>
+              <AppleButton variant="ghost" onClick={onClose}>{t("common.close")}</AppleButton>
             </div>
           </div>
         )}

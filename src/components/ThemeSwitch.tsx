@@ -1,4 +1,5 @@
 import type { Theme } from "../constants";
+import { useTranslation } from "react-i18next";
 
 /** macOS-style segmented control for light / dark / system theme. */
 export default function ThemeSwitch({
@@ -8,10 +9,11 @@ export default function ThemeSwitch({
   value: Theme;
   onChange: (t: Theme) => void;
 }) {
+  const { t: tr } = useTranslation();
   const options: { value: Theme; icon: string; label: string }[] = [
-    { value: "light", icon: "☀️", label: "浅色" },
-    { value: "dark", icon: "🌙", label: "深色" },
-    { value: "system", icon: "💻", label: "系统" },
+    { value: "light", icon: "☀️", label: tr("theme.light") },
+    { value: "dark", icon: "🌙", label: tr("theme.dark") },
+    { value: "system", icon: "💻", label: tr("theme.system") },
   ];
   return (
     <div

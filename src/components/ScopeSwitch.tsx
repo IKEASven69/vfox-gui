@@ -1,4 +1,5 @@
 import type { VersionScope } from "../constants";
+import { useTranslation } from "react-i18next";
 
 /** Segmented control for global vs project version scope.
  *  Clicking "项目" when already selected re-opens the directory picker. */
@@ -13,6 +14,7 @@ export default function ScopeSwitch({
   projectPath: string | null;
   onPickProject: () => void;
 }) {
+  const { t } = useTranslation();
   return (
     <div className="flex items-center gap-2">
       <div
@@ -37,7 +39,7 @@ export default function ScopeSwitch({
                 color: active ? "var(--accent)" : "var(--text-tertiary)",
               }}
             >
-              {scope === "global" ? "全局" : "项目"}
+              {scope === "global" ? t("detail.global") : t("detail.project")}
             </button>
           );
         })}

@@ -1,4 +1,5 @@
 import { memo } from "react";
+import { useTranslation } from "react-i18next";
 import type { AvailableSdk, Sdk } from "../constants";
 import { sdkMeta } from "../constants";
 import ProjectScanner from "./ProjectScanner";
@@ -31,6 +32,7 @@ export default function SdkSidebar({
   onSdkQueryChange, onOpenSettings, onOpenHelp,
   onScanInstall, onSnapshotRestored,
 }: Props) {
+  const { t } = useTranslation();
   return (
     <aside
       className="w-64 shrink-0 flex flex-col border-r"
@@ -52,9 +54,10 @@ export default function SdkSidebar({
         >
           <span style={{ color: "var(--text-tertiary)", fontSize: 13 }}>🔍</span>
           <input
+            id="sdk-search-input"
             value={sdkQuery}
             onChange={(e) => onSdkQueryChange(e.target.value)}
-            placeholder="搜索 SDK"
+            placeholder={t("sidebar.searchPlaceholder")}
             className="flex-1 bg-transparent outline-none text-[13px]"
             style={{ color: "var(--text)" }}
           />
@@ -64,11 +67,11 @@ export default function SdkSidebar({
       <nav className="flex-1 overflow-y-auto px-2.5 py-1">
         {loading ? (
           <p className="px-3 py-2 text-[13px]" style={{ color: "var(--text-tertiary)" }}>
-            加载中…
+            {t("common.loading")}
           </p>
         ) : filteredCatalog.length === 0 ? (
           <p className="px-3 py-2 text-[13px]" style={{ color: "var(--text-tertiary)" }}>
-            {catalog.length === 0 ? "未检测到 vfox" : "无匹配"}
+            {catalog.length === 0 ? t("sidebar.noVfox") : t("common.noMatch")}
           </p>
         ) : (
           filteredCatalog.map((c) => (
@@ -91,13 +94,13 @@ export default function SdkSidebar({
         style={{ borderColor: "var(--hairline)" }}
       >
         <span className="text-[11px]" style={{ color: "var(--text-tertiary)" }}>
-          {sdksCount} 已安装 · {catalog.length} 可用
+          {t("sidebar.stats", { installed: sdksCount, available: catalog.length })}
         </span>
         <div className="flex items-center gap-1">
-          <FooterButton active={view === "settings"} onClick={onOpenSettings} title="设置">
+          <FooterButton active={view === "settings"} onClick={onOpenSettings} title={t("sidebar.settings")}>
             ⚙
           </FooterButton>
-          <FooterButton active={view === "help"} onClick={onOpenHelp} title="帮助">
+          <FooterButton active={view === "help"} onClick={onOpenHelp} title={t("sidebar.help")}>
             ?
           </FooterButton>
         </div>
@@ -144,6 +147,7 @@ const SdkSidebarItem = memo(function SdkSidebarItem({
   onAddPlugin: (name: string) => void;
   onContextMenu: (e: React.MouseEvent, sdk: string, installed: boolean) => void;
 }) {
+  const { t } = useTranslation();
   const c = item;
   return (
     <div
@@ -179,7 +183,7 @@ const SdkSidebarItem = memo(function SdkSidebarItem({
             className="shrink-0 text-[10px] font-semibold px-1.5 py-px leading-none"
             style={{ color: "var(--accent)", background: "var(--accent-soft)", borderRadius: "var(--radius-xs)" }}
           >
-            官方
+            {t("common.official")}
           </span>
         )}
       </span>
@@ -194,7 +198,7 @@ const SdkSidebarItem = memo(function SdkSidebarItem({
           className="text-[11px] px-2 py-0.5 rounded-full font-medium"
           style={{ background: "var(--accent)", color: "#fff", opacity: busy ? 0.4 : 1 }}
         >
-          添加
+           {t("common.add")}
         </button>
       ) : null}
     </div>

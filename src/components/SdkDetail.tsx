@@ -1,4 +1,5 @@
 import { memo } from "react";
+import { useTranslation } from "react-i18next";
 import type { AvailableVersion, DiskUsageEntry, Sdk, VersionScope } from "../constants";
 import { sdkMeta, formatBytes } from "../constants";
 import AppleButton from "./AppleButton";
@@ -34,6 +35,7 @@ export default function SdkDetail({
   onVersionQueryChange, onScopeChange, onPickProject,
   onUse, onInstall, onRemove, onRefresh, onRetry,
 }: Props) {
+  const { t } = useTranslation();
   return (
     <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
       {/* Header */}
@@ -45,7 +47,7 @@ export default function SdkDetail({
           </h2>
           {currentSdk.current && (
             <span className="text-[13px]" style={{ color: "var(--text-secondary)" }}>
-              当前{" "}
+              {t("detail.current")}{" "}
               <code style={{ color: "var(--accent)" }}>{currentSdk.current}</code>
               {versionScope === "project" && projectPath && (
                 <span
@@ -53,7 +55,7 @@ export default function SdkDetail({
                   style={{ background: "var(--ember)", color: "#fff", borderRadius: "var(--radius-xs)" }}
                   title={projectPath}
                 >
-                  项目
+                  {t("detail.project")}
                 </span>
               )}
             </span>
@@ -64,7 +66,7 @@ export default function SdkDetail({
           disabled={busy}
           className="shrink-0 w-8 h-8 flex items-center justify-center rounded-full transition-opacity disabled:opacity-30 hover:bg-[var(--hairline)]"
           style={{ color: "var(--text-tertiary)" }}
-          title="刷新"
+          title={t("common.refresh")}
         >
           <RefreshIcon spinning={busy} />
         </button>
@@ -77,12 +79,12 @@ export default function SdkDetail({
         {/* ── Left column: installed versions ── */}
         <section className="flex flex-col min-h-0" style={{ flex: "1 1 0%", minWidth: 0 }}>
           <div className="flex items-center justify-between mb-2 shrink-0">
-            <SectionLabel>已安装 ({currentSdk.installed.length})</SectionLabel>
+            <SectionLabel>{t("detail.installedCount", { count: currentSdk.installed.length })}</SectionLabel>
             <ScopeSwitch value={versionScope} onChange={onScopeChange}
               projectPath={projectPath} onPickProject={onPickProject} />
           </div>
           {currentSdk.installed.length === 0 ? (
-            <EmptyHint>尚未安装任何版本</EmptyHint>
+            <EmptyHint>{t("detail.noInstalled")}</EmptyHint>
           ) : (
             <GroupedList scrollable>
               {currentSdk.installed.map((v) => {
@@ -108,7 +110,7 @@ export default function SdkDetail({
         {/* ── Right column: available versions ── */}
         <section className="flex flex-col min-h-0" style={{ flex: "1 1 0%", minWidth: 0 }}>
           <div className="mb-2 shrink-0">
-            <SectionLabel>可安装</SectionLabel>
+            <SectionLabel>{t("detail.available")}</SectionLabel>
           </div>
           <div
             className="flex items-center gap-2 px-3 py-1.5 mb-2 shrink-0"
@@ -118,15 +120,15 @@ export default function SdkDetail({
             <input
               value={versionQuery}
               onChange={(e) => onVersionQueryChange(e.target.value)}
-              placeholder="搜索版本…"
+              placeholder={t("detail.versionSearchPlaceholder")}
               className="flex-1 bg-transparent outline-none text-[13px]"
               style={{ color: "var(--text)" }}
             />
           </div>
           {searchLoading ? (
-            <EmptyHint>查询可用版本中…</EmptyHint>
+            <EmptyHint>{t("detail.searching")}</EmptyHint>
           ) : filteredVersions.length === 0 ? (
-            <EmptyHint>无匹配版本</EmptyHint>
+            <EmptyHint>{t("detail.noVersionMatch")}</EmptyHint>
           ) : (
             <GroupedList scrollable>
               {filteredVersions.map((v) => (
@@ -156,7 +158,7 @@ export default function SdkDetail({
             className="shrink-0 text-[12px] font-medium px-2.5 py-1 rounded-full"
             style={{ background: "var(--danger)", color: "#fff" }}
           >
-            重试
+               {t("common.retry")}
           </button>
         </div>
       )}
@@ -195,6 +197,7 @@ const VersionRow = memo(function VersionRow({
   usage: DiskUsageEntry | undefined;
   busy: boolean; onUse: () => void; onRemove: () => void;
 }) {
+  const { t } = useTranslation();
   return (
     <Row>
       <div className="flex items-center gap-3 min-w-0">
@@ -206,7 +209,7 @@ const VersionRow = memo(function VersionRow({
           }}
         />
         <code className="text-[15px] truncate">{version}</code>
-        {isCurrent && <Tag color="success">当前</Tag>}
+        {isCurrent && <Tag color="success">{t("detail.current")}</Tag>}
       </div>
       <div className="flex items-center gap-2 shrink-0">
         {usage && usage.bytes > 0 && (
@@ -216,9 +219,9 @@ const VersionRow = memo(function VersionRow({
         )}
         <div className="flex gap-1.5">
           {!isCurrent && (
-            <AppleButton variant="primary" disabled={busy} onClick={onUse}>切换</AppleButton>
+            <AppleButton variant="primary" disabled={busy} onClick={onUse}>{t("detail.switch")}</AppleButton>
           )}
-          <AppleButton variant="ghost" disabled={busy} onClick={onRemove}>卸载</AppleButton>
+          <AppleButton variant="ghost" disabled={busy} onClick={onRemove}>{t("detail.uninstall")}</AppleButton>
         </div>
       </div>
     </Row>
@@ -235,8 +238,9 @@ const AvailableRow = memo(function AvailableRow({
   // we can style them distinctly instead of dumping a raw string.
   const tags: string[] = [];
   const npmMatch = note?.match(/\[(.*?)\]/);
+  const { t } = useTranslation();
   if (note?.match(/\(lts\)|lts/i)) tags.push("LTS");
-  if (note?.match(/\(pre-release\)|pre-release/i)) tags.push("预发布");
+          if (note?.match(/\(pre-release\)|pre-release/i)) tags.push(t("detail.preRelease"));
   const npm = npmMatch?.[1];
   return (
     <Row>
@@ -254,11 +258,11 @@ const AvailableRow = memo(function AvailableRow({
           </span>
         )}
         {installed && (
-          <span className="text-[11px] shrink-0" style={{ color: "var(--text-tertiary)" }}>已安装</span>
+          <span className="text-[11px] shrink-0" style={{ color: "var(--text-tertiary)" }}>{t("common.installed")}</span>
         )}
       </div>
       {!installed && (
-        <AppleButton variant="success" disabled={busy} onClick={onInstall}>安装</AppleButton>
+        <AppleButton variant="success" disabled={busy} onClick={onInstall}>{t("detail.install")}</AppleButton>
       )}
     </Row>
   );

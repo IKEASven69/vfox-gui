@@ -1,4 +1,5 @@
 import { type ReactNode } from "react";
+import { useTranslation } from "react-i18next";
 
 /** Right-click context menu for sidebar SDK items. Position is clamped to the
  *  viewport so the menu never overflows off-screen. */
@@ -11,6 +12,7 @@ export default function ContextMenu({
   onAdd: () => void;
   onRemove: () => void;
 }) {
+  const { t } = useTranslation();
   const MENU_W = 160;
   const MENU_H = 120;
   const clampedX = Math.min(x, window.innerWidth - MENU_W - 8);
@@ -27,11 +29,11 @@ export default function ContextMenu({
     >
       {installed ? (
         <>
-          <ContextMenuItem onClick={onView}>查看详情</ContextMenuItem>
-          <ContextMenuItem destructive onClick={onRemove}>移除插件…</ContextMenuItem>
+          <ContextMenuItem onClick={onView}>{t("contextMenu.viewDetails")}</ContextMenuItem>
+          <ContextMenuItem destructive onClick={onRemove}>{t("contextMenu.removePlugin")}</ContextMenuItem>
         </>
       ) : (
-        <ContextMenuItem onClick={onAdd}>添加插件</ContextMenuItem>
+        <ContextMenuItem onClick={onAdd}>{t("contextMenu.addPlugin")}</ContextMenuItem>
       )}
     </div>
   );

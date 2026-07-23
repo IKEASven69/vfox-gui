@@ -1,4 +1,5 @@
 import { useEffect, useState, useCallback, useMemo } from "react";
+import { useTranslation } from "react-i18next";
 import { invoke } from "@tauri-apps/api/core";
 import { listen, UnlistenFn } from "@tauri-apps/api/event";
 import { check } from "@tauri-apps/plugin-updater";
@@ -23,6 +24,7 @@ import "./App.css";
 type View = "main" | "settings" | "help";
 
 export default function App() {
+  const { t } = useTranslation();
   // ── core state ──
   const [sdks, setSdks] = useState<Sdk[]>([]);
   const [catalog, setCatalog] = useState<AvailableSdk[]>([]);
@@ -174,7 +176,7 @@ export default function App() {
       if (!mod) return;
       if (e.key === "f" || e.key === "F") {
         e.preventDefault();
-        const input = document.querySelector<HTMLInputElement>('input[placeholder="搜索 SDK"]');
+        const input = document.querySelector<HTMLInputElement>('#sdk-search-input');
         input?.focus();
       } else if (e.key === ",") {
         e.preventDefault();
@@ -192,7 +194,7 @@ export default function App() {
   const pickProjectDir = useCallback(async () => {
     const selectedDir = await open({
       directory: true, multiple: false,
-      title: "选择项目目录 — .tool-versions 将写入此目录",
+      title: t("project.pickDirectory"),
     });
     if (selectedDir && typeof selectedDir === "string") {
       setProjectPath(selectedDir);
@@ -241,7 +243,7 @@ export default function App() {
     try {
       setAvailable(await invoke<AvailableVersion[]>("search_versions", { sdk }));
     } catch (e) {
-      setError(`获取可用版本失败: ${e}`);
+      setError(t("detail.searchFailed", { error: String(e) }));
     } finally {
       setSearchLoading(false);
     }
@@ -285,7 +287,7 @@ export default function App() {
 
   // ── actions ──
   const handleUse = useCallback(async (sdk: string, version: string) => {
-    setBusy(true); setBusyLabel(`切换到 ${version}…`); setError(null);
+    setBusy(true); setBusyLabel(t("progress.switching", { version })); setError(null);
     try {
       await invoke("use_version", { sdk, version, scope: versionScope,
         projectPath: versionScope === "project" ? projectPath : null });
@@ -297,12 +299,12 @@ export default function App() {
   }, [versionScope, projectPath, flash, refresh, markAvailable]);
 
   const handleInstall = useCallback(async (sdk: string, version: string) => {
-    setBusy(true); setBusyLabel(`安装 ${sdk}@${version}…（可能需要几分钟）`);
+    setBusy(true); setBusyLabel(t("progress.installing", { sdk, version }));
     setInstallProgress({ percent: null, speed: null, phase: "starting" });
     setError(null);
     try {
       await invoke("install_version", { sdk, version });
-      flash(`已安装 ${version}`);
+      flash(t("toast.installed", { version }));
       await refresh();
       markAvailable(version, true);
       // Reload disk usage so the new version's size shows up immediately.
@@ -313,14 +315,14 @@ export default function App() {
 
   const handleRemove = useCallback(async (sdk: string, version: string) => {
     setConfirmState({
-      title: `卸载 ${sdk}@${version}`,
-      message: "确定要卸载这个版本吗？此操作无法撤销。",
-      confirmLabel: "卸载", destructive: true,
+      title: t("confirm.uninstallTitle", { sdk, version }),
+      message: t("confirm.uninstallMessage"),
+      confirmLabel: t("confirm.uninstallConfirm"), destructive: true,
       pending: async () => {
-        setBusy(true); setBusyLabel(`卸载 ${version}…`); setError(null);
+        setBusy(true); setBusyLabel(t("progress.uninstalling", { version })); setError(null);
         try {
           await invoke("remove_version", { sdk, version });
-          flash(`已卸载 ${version}`);
+          flash(t("toast.uninstalled", { version }));
           await refresh();
           markAvailable(version, false);
           loadDiskUsage();
@@ -331,10 +333,10 @@ export default function App() {
   }, [flash, refresh, markAvailable, loadDiskUsage]);
 
   const handleAddPlugin = useCallback(async (name: string) => {
-    setBusy(true); setBusyLabel(`添加插件 ${name}…`); setError(null);
+    setBusy(true); setBusyLabel(t("progress.addingPlugin", { name })); setError(null);
     try {
       await invoke("add_plugin", { name });
-      flash(`已添加 ${sdkMeta(name).name}`);
+      flash(t("toast.pluginAdded", { name: sdkMeta(name).name }));
       await refresh();
       setSelected(name);
     } catch (e) { setError(String(e)); }
@@ -344,14 +346,14 @@ export default function App() {
   const handleRemovePlugin = useCallback(async (name: string) => {
     setCtxMenu(null);
     setConfirmState({
-      title: `移除 ${sdkMeta(name).name} 插件`,
-      message: "确定要移除这个 SDK 插件吗？已安装的版本会保留在磁盘上。",
-      confirmLabel: "移除", destructive: true,
+      title: t("confirm.removePluginTitle", { name: sdkMeta(name).name }),
+      message: t("confirm.removePluginMessage"),
+      confirmLabel: t("confirm.removePluginConfirm"), destructive: true,
       pending: async () => {
-        setBusy(true); setBusyLabel(`移除插件 ${name}…`); setError(null);
+        setBusy(true); setBusyLabel(t("progress.removingPlugin", { name })); setError(null);
         try {
           await invoke("remove_plugin", { name });
-          flash(`已移除 ${sdkMeta(name).name}`);
+          flash(t("toast.pluginRemoved", { name: sdkMeta(name).name }));
           await refresh();
         } catch (e) { setError(String(e)); }
         finally { setBusy(false); setBusyLabel(null); }
@@ -405,9 +407,9 @@ export default function App() {
   }, []);
 
   const handleVfoxUpdate = useCallback(async () => {
-    setBusy(true); setBusyLabel("正在更新 vfox CLI…"); setError(null);
+    setBusy(true); setBusyLabel(t("progress.updatingVfox")); setError(null);
     try {
-      flash(await invoke<string>("vfox_update") || "vfox 已更新到最新版本");
+      flash(await invoke<string>("vfox_update") || t("toast.vfoxUpdated"));
       await refresh();
     } catch (e) { setError(String(e)); }
     finally { setBusy(false); setBusyLabel(null); }
@@ -470,27 +472,28 @@ export default function App() {
               <>
                 <span className="text-[40px] mb-1">🦊</span>
                 <p className="text-[15px] font-medium" style={{ color: "var(--text-secondary)" }}>
-                  未检测到 vfox
+                  {t("empty.noVfox")}
                 </p>
                 <p className="text-[13px] max-w-xs leading-relaxed">
-                  请先安装 vfox 版本管理器，安装后在终端确认
-                  <code className="mx-1">vfox available</code> 可正常运行，再点重新检测。
+                  {t("empty.noVfoxDesc").split("vfox available").map((part, i) => (
+                    i === 0 ? part : <><code className="mx-1">vfox available</code>{part}</>
+                  ))}
                 </p>
                 <div className="flex gap-2 mt-3">
                   <button onClick={() => openUrl("https://vfox.lhan.me/install.html")}
                     className="text-[13px] font-medium px-4 py-1.5 rounded-full"
                     style={{ background: "var(--accent)", color: "#fff" }}>
-                    安装 vfox
+                    {t("empty.installVfox")}
                   </button>
                   <button onClick={() => { setError(null); setLoading(true); refresh(); }}
                     className="text-[13px] font-medium px-4 py-1.5 rounded-full"
                     style={{ border: "1px solid var(--hairline-strong)", color: "var(--text-secondary)" }}>
-                    重新检测
+                    {t("empty.recheck")}
                   </button>
                 </div>
               </>
             ) : (
-              <p className="text-[14px]">从左侧选择一个 SDK</p>
+              <p className="text-[14px]">{t("empty.selectSdk")}</p>
             )}
           </div>
         )}

@@ -1,4 +1,5 @@
 import { memo } from "react";
+import { useTranslation } from "react-i18next";
 
 interface Entry {
   sdk: string;
@@ -20,14 +21,15 @@ interface Props {
  * Only rendered when a project scope is active; otherwise hidden.
  */
 export default function ProjectHistory({ entries }: Props) {
+  const { t } = useTranslation();
   return (
     <div className="space-y-1.5">
       <p className="text-[10px] font-semibold uppercase tracking-wider px-1" style={{ color: "var(--text-tertiary)" }}>
-        项目版本历史
+        {t("project.history")}
       </p>
       {entries.length === 0 ? (
         <p className="text-[12px] px-1.5 py-2" style={{ color: "var(--text-tertiary)" }}>
-          还没有版本切换记录。在此项目作用域下切换 SDK 版本后，历史会显示在这里。
+          {t("project.noHistory")}
         </p>
       ) : (
         <div className="rounded-[12px] overflow-hidden" style={{ background: "var(--card)", boxShadow: "var(--shadow-sm)" }}>

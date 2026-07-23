@@ -1,4 +1,5 @@
 import { useEffect } from "react";
+import { useTranslation } from "react-i18next";
 import AppleButton from "./AppleButton";
 
 /** Apple-style confirmation dialog — non-blocking overlay. */
@@ -13,8 +14,9 @@ export default function ConfirmDialog({
     destructive: boolean;
     pending: () => Promise<void>;
   };
-  onClose: () => void;
-}) {
+    onClose: () => void;
+  }) {
+  const { t } = useTranslation();
   // Esc dismisses (same as clicking the backdrop).
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
@@ -39,7 +41,7 @@ export default function ConfirmDialog({
           {state.message}
         </p>
         <div className="flex justify-end gap-2">
-          <AppleButton variant="ghost" onClick={onClose}>取消</AppleButton>
+          <AppleButton variant="ghost" onClick={onClose}>{t("common.cancel")}</AppleButton>
           <AppleButton
             variant={state.destructive ? "ghost" : "primary"}
             onClick={async () => {

@@ -1,6 +1,8 @@
 /** Slim progress bar pinned to the top of the main area.
  *  When `install` carries a download percent it renders a determinate bar;
  *  otherwise it falls back to an indeterminate spinner + label. */
+import { useTranslation } from "react-i18next";
+
 export default function ProgressBar({
   label,
   install,
@@ -8,6 +10,7 @@ export default function ProgressBar({
   label: string;
   install?: { percent: number | null; speed: string | null; phase: string } | null;
 }) {
+  const { t } = useTranslation();
   const pct = install?.percent ?? null;
   const downloading = install?.phase === "downloading" && pct !== null;
   return (
@@ -27,7 +30,7 @@ export default function ProgressBar({
           </svg>
         )}
         <span className="text-[12px] flex-1" style={{ color: "var(--text-secondary)" }}>
-          {downloading ? `下载中 ${pct}%` : label}
+          {downloading ? t("progress.downloading", { pct: String(pct) }) : label}
         </span>
         {downloading && install?.speed && (
           <span className="text-[11px] font-mono" style={{ color: "var(--text-tertiary)" }}>
