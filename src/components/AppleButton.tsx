@@ -18,25 +18,25 @@ export default function AppleButton({
 }) {
   const styles: Record<string, CSSProperties & { hoverBg?: string }> = {
     primary: {
-      background: "rgba(0, 113, 227, 0.85)",
+      background: "var(--accent)",
       color: "#fff",
       border: "none",
       backdropFilter: "blur(10px)",
-      hoverBg: "rgba(0, 88, 208, 0.9)",
+      hoverBg: "var(--accent-hover)",
     },
     success: {
-      background: "rgba(48, 181, 83, 0.85)",
+      background: "var(--success)",
       color: "#fff",
       border: "none",
       backdropFilter: "blur(10px)",
-      hoverBg: "rgba(40, 160, 73, 0.9)",
+      hoverBg: "var(--success)",
     },
     ghost: {
-      background: "rgba(255, 255, 255, 0.4)",
+      background: "var(--glass-ghost-bg)",
       color: "var(--accent)",
-      border: "0.5px solid rgba(255, 255, 255, 0.5)",
+      border: "0.5px solid var(--glass-border)",
       backdropFilter: "blur(10px)",
-      hoverBg: "rgba(255, 255, 255, 0.6)",
+      hoverBg: "var(--glass-ghost-hover)",
     },
   };
   const s = styles[variant];

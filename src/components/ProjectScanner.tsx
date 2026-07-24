@@ -115,7 +115,7 @@ export default function ProjectScanner({ busy, onInstallSdk }: Props) {
                     onClick={() => handleAdd(d.sdk)}
                     disabled={busy}
                     className="text-[10px] px-2 py-0.5 rounded-full font-medium shrink-0 disabled:opacity-40"
-                    style={{ background: "rgba(48, 181, 83, 0.85)", color: "#fff", backdropFilter: "blur(10px)" }}
+                    style={{ background: "var(--success)", color: "#fff", backdropFilter: "blur(10px)" }}
                   >
                     {t("sidebar.addSdk")}
                   </button>

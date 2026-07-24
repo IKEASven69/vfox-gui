@@ -52,7 +52,7 @@ export default function SdkDetail({
               {versionScope === "project" && projectPath && (
                 <span
                   className="ml-1.5 text-[11px] px-1.5 py-px font-medium"
-                  style={{ background: "rgba(182, 68, 0, 0.85)", color: "#fff", borderRadius: "var(--radius-xs)", backdropFilter: "blur(10px)" }}
+                  style={{ background: "var(--ember)", color: "#fff", borderRadius: "var(--radius-xs)", backdropFilter: "blur(10px)" }}
                   title={projectPath}
                 >
                   {t("detail.project")}
@@ -150,13 +150,13 @@ export default function SdkDetail({
       {error && (
         <div
           className="mx-8 mb-6 px-4 py-3 text-[12px] flex items-start justify-between gap-3 shrink-0"
-          style={{ background: "rgba(224, 53, 59, 0.10)", color: "var(--danger)", borderRadius: "var(--radius-md)", backdropFilter: "blur(10px)" }}
+          style={{ background: "var(--danger-soft)", color: "var(--danger)", borderRadius: "var(--radius-md)", backdropFilter: "blur(10px)" }}
         >
           <pre className="whitespace-pre-wrap font-mono m-0 flex-1">{error}</pre>
           <button
             onClick={onRetry}
             className="shrink-0 text-[12px] font-medium px-2.5 py-1 rounded-full"
-            style={{ background: "rgba(224, 53, 59, 0.85)", color: "#fff", backdropFilter: "blur(10px)" }}
+            style={{ background: "var(--danger)", color: "#fff", backdropFilter: "blur(10px)" }}
           >
                {t("common.retry")}
           </button>

@@ -15,11 +15,11 @@ export default function GroupedList({
       className="card-enter glass-list"
       style={{
         borderRadius: "var(--radius-card)",
-        // Translucent glass surface instead of opaque card + shadow.
-        background: "rgba(255, 255, 255, 0.72)",
+        // Translucent glass surface — uses CSS var so dark mode auto-adapts.
+        background: "var(--glass-surface)",
         backdropFilter: "blur(20px) saturate(180%)",
         WebkitBackdropFilter: "blur(20px) saturate(180%)",
-        border: "0.5px solid rgba(255, 255, 255, 0.5)",
+        border: "0.5px solid var(--glass-border)",
         boxShadow: "var(--shadow-sm)",
         // When scrollable, fill the flex parent and scroll internally so long
         // lists scroll inside the card instead of pushing the whole window.

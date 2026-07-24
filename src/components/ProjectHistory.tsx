@@ -32,7 +32,7 @@ export default function ProjectHistory({ entries }: Props) {
           {t("project.noHistory")}
         </p>
       ) : (
-        <div className="rounded-[12px] overflow-hidden glass-list" style={{ border: "0.5px solid rgba(255,255,255,0.5)" }}>
+        <div className="rounded-[12px] overflow-hidden glass-list">
           {entries.map((e, i) => (
             <HistoryRow key={`${e.sdk}-${e.date}-${i}`} entry={e} first={i === 0} />
           ))}

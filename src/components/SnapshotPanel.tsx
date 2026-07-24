@@ -99,7 +99,7 @@ export default function SnapshotPanel({ busy, selectedSdk, onRestored }: Props) 
           onClick={() => save("current")}
           disabled={busy || saving || !name.trim() || !selectedSdk}
           className="flex-1 text-[11px] py-1.5 rounded-[6px] font-medium disabled:opacity-30 transition-opacity text-center"
-          style={{ background: "rgba(0, 113, 227, 0.85)", color: "#fff", backdropFilter: "blur(10px)" }}
+          style={{ background: "var(--accent)", color: "#fff", backdropFilter: "blur(10px)" }}
           title={selectedSdk ? t("snapshot.saveSdkHint", { sdk: selectedSdk }) : t("snapshot.pickSdkHint")}
         >
            {t("snapshot.saveCurrent")}
@@ -108,7 +108,7 @@ export default function SnapshotPanel({ busy, selectedSdk, onRestored }: Props) 
           onClick={() => save("all")}
           disabled={busy || saving || !name.trim()}
           className="flex-1 text-[11px] py-1.5 rounded-[6px] font-medium disabled:opacity-30 transition-opacity text-center"
-          style={{ background: "rgba(255,255,255,0.4)", color: "var(--text-secondary)", border: "0.5px solid rgba(255,255,255,0.5)", backdropFilter: "blur(10px)" }}
+          style={{ background: "var(--glass-ghost-bg)", color: "var(--text-secondary)", border: "0.5px solid var(--glass-border)", backdropFilter: "blur(10px)" }}
           title={t("snapshot.saveAllHint")}
         >
            {t("snapshot.saveAll")}
