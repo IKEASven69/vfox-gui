@@ -1,8 +1,8 @@
 import { type ReactNode } from "react";
 
-/** macOS Sequoia grouped list — one rounded container with a soft layered
- *  shadow, rows separated by hairlines. Sequoia reintroduces subtle depth
- *  (vs the old flat look) via --shadow-card. */
+/** Liquid-glass grouped list — translucent container, rows separated by
+ *  hairlines. Glass style uses backdrop-filter + semi-transparent bg instead
+ *  of heavy shadows (filefind approach). */
 export default function GroupedList({
   children,
   scrollable,
@@ -12,11 +12,15 @@ export default function GroupedList({
 }) {
   return (
     <div
-      className="card-enter"
+      className="card-enter glass-list"
       style={{
         borderRadius: "var(--radius-card)",
-        background: "var(--card)",
-        boxShadow: "var(--shadow-card)",
+        // Translucent glass surface instead of opaque card + shadow.
+        background: "rgba(255, 255, 255, 0.72)",
+        backdropFilter: "blur(20px) saturate(180%)",
+        WebkitBackdropFilter: "blur(20px) saturate(180%)",
+        border: "0.5px solid rgba(255, 255, 255, 0.5)",
+        boxShadow: "var(--shadow-sm)",
         // When scrollable, fill the flex parent and scroll internally so long
         // lists scroll inside the card instead of pushing the whole window.
         flex: scrollable ? "1 1 0%" : undefined,

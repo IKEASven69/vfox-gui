@@ -113,8 +113,8 @@ export default function SdkDetail({
             <SectionLabel>{t("detail.available")}</SectionLabel>
           </div>
           <div
-            className="flex items-center gap-2 px-3 py-1.5 mb-2 shrink-0"
-            style={{ background: "var(--card)", boxShadow: "var(--shadow-sm)", borderRadius: "var(--radius-sm)" }}
+            className="flex items-center gap-2 px-3 py-1.5 mb-2 shrink-0 glass-input"
+            style={{ borderRadius: "var(--radius-sm)" }}
           >
             <span style={{ color: "var(--text-tertiary)", fontSize: 13 }}>🔍</span>
             <input

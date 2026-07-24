@@ -1,8 +1,10 @@
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { useTranslation } from "react-i18next";
 
-/** macOS-style traffic light title bar. Replaces the native window chrome
- *  (decorations: false) with custom close/minimize/maximize dots + drag area.
+const isMac = typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent);
+
+/** Custom title bar replacing the native chrome (decorations: false).
+ *  Window controls position adapts to OS: right on Windows/Linux, left on macOS.
  *  The fluid glass background layers live here too so they're always present. */
 export default function TitleBar() {
   const { t } = useTranslation();
@@ -11,7 +13,6 @@ export default function TitleBar() {
   return (
     <>
       {/* ── Liquid glass background layers (behind all content) ── */}
-      {/* SVG filters for fluid displacement + noise */}
       <svg style={{ position: "absolute", width: 0, height: 0 }}>
         <defs>
           <filter id="liquid-filter">
@@ -34,15 +35,30 @@ export default function TitleBar() {
       <div className="glass-overlay" />
       <div className="glass-noise" />
 
-      {/* ── Traffic light title bar ── */}
+      {/* ── Title bar ── */}
       <div className="titlebar">
-        <div className="traffic-lights">
-          <button className="tl-dot close" onClick={() => win.close()} title={t("common.close")} />
-          <button className="tl-dot minimize" onClick={() => win.minimize()} title={t("common.close")} />
-          <button className="tl-dot maximize" onClick={() => win.toggleMaximize()} title="Maximize" />
-        </div>
+        {/* macOS: dots on the left; Windows/Linux: dots on the right */}
+        {isMac && <TrafficLights win={win} t={t} />}
         <span className="title-text">vfox</span>
+        <div style={{ flex: 1 }} />
+        {!isMac && <TrafficLights win={win} t={t} />}
       </div>
     </>
   );
 }
+
+function TrafficLights({
+  win, t,
+}: {
+  win: ReturnType<typeof getCurrentWindow>;
+  t: (k: string) => string;
+}) {
+  return (
+    <div className="traffic-lights">
+      <button className="tl-dot close" onClick={() => win.close()} title={t("common.close")} />
+      <button className="tl-dot minimize" onClick={() => win.minimize()} title={t("common.close")} />
+      <button className="tl-dot maximize" onClick={() => win.toggleMaximize()} title="Maximize" />
+    </div>
+  );
+}
+

@@ -49,8 +49,8 @@ export default function SdkSidebar({
       {/* Spotlight-style SDK search */}
       <div className="px-4 pt-4 pb-2">
         <div
-          className="flex items-center gap-2 px-2.5 py-1.5"
-          style={{ background: "var(--card)", boxShadow: "var(--shadow-sm)", borderRadius: "var(--radius-sm)" }}
+          className="flex items-center gap-2 px-2.5 py-1.5 glass-input"
+          style={{ borderRadius: "var(--radius-sm)" }}
         >
           <span style={{ color: "var(--text-tertiary)", fontSize: 13 }}>🔍</span>
           <input
