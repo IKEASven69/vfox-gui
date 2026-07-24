@@ -19,6 +19,7 @@ import ProgressBar from "./components/ProgressBar";
 import ConfirmDialog from "./components/ConfirmDialog";
 import UpdateModal from "./components/UpdateModal";
 import ContextMenu from "./components/ContextMenu";
+import TitleBar from "./components/TitleBar";
 import "./App.css";
 
 type View = "main" | "settings" | "help";
@@ -415,6 +416,17 @@ export default function App() {
     finally { setBusy(false); setBusyLabel(null); }
   }, [flash, refresh]);
 
+  // ── tray action listener (must be after checkForUpdate/handleVfoxUpdate) ──
+  useEffect(() => {
+    let unlisten: UnlistenFn | undefined;
+    let cancelled = false;
+    listen<string>("tray://action", (e) => {
+      if (e.payload === "check_update") checkForUpdate();
+      else if (e.payload === "update_vfox") handleVfoxUpdate();
+    }).then((fn) => { if (cancelled) fn(); else unlisten = fn; });
+    return () => { cancelled = true; unlisten?.(); };
+  }, [checkForUpdate, handleVfoxUpdate]);
+
   const handleSdkContextMenu = useCallback((e: React.MouseEvent, sdk: string, installed: boolean) => {
     e.preventDefault();
     setCtxMenu({ sdk, x: e.clientX, y: e.clientY, installed });
@@ -422,8 +434,10 @@ export default function App() {
 
   // ── render ──
   return (
-    <div className="flex h-screen" style={{ background: "var(--bg)" }}>
-      <SdkSidebar
+    <div className="flex flex-col h-screen" style={{ background: "transparent" }}>
+      <TitleBar />
+      <div className="flex flex-1 min-h-0">
+        <SdkSidebar
         loading={loading} catalog={catalog}
         installedMap={installedMap} filteredCatalog={filteredCatalog}
         selected={selected} sdkQuery={sdkQuery} busy={busy}
@@ -498,6 +512,7 @@ export default function App() {
           </div>
         )}
       </main>
+      </div>{/* end flex-1 sidebar+main row */}
 
       {/* Toast */}
       {toast && (

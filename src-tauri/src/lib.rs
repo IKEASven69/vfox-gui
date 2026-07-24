@@ -6,9 +6,9 @@ mod commands;
 mod vfox;
 
 use tauri::{
-    menu::{MenuBuilder, MenuItemBuilder},
+    menu::{MenuBuilder, MenuItemBuilder, PredefinedMenuItem},
     tray::TrayIconBuilder,
-    Manager,
+    Emitter, Manager,
 };
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -22,13 +22,19 @@ pub fn run() {
             // ── System Tray ──
             let show = MenuItemBuilder::with_id("show", "显示窗口").build(app)?;
             let hide = MenuItemBuilder::with_id("hide", "隐藏窗口").build(app)?;
-            let separator = tauri::menu::PredefinedMenuItem::separator(app)?;
+            let sep1 = PredefinedMenuItem::separator(app)?;
+            let check_update = MenuItemBuilder::with_id("check_update", "检查应用更新").build(app)?;
+            let update_vfox = MenuItemBuilder::with_id("update_vfox", "更新 vfox CLI").build(app)?;
+            let sep2 = PredefinedMenuItem::separator(app)?;
             let quit = MenuItemBuilder::with_id("quit", "退出").build(app)?;
 
             let menu = MenuBuilder::new(app)
                 .item(&show)
                 .item(&hide)
-                .item(&separator)
+                .item(&sep1)
+                .item(&check_update)
+                .item(&update_vfox)
+                .item(&sep2)
                 .item(&quit)
                 .build()?;
 
@@ -38,14 +44,33 @@ pub fn run() {
                 .menu(&menu)
                 .on_menu_event(move |app, event| {
                     let id = event.id().as_ref();
-                    let window = app.get_webview_window("main").unwrap();
                     match id {
                         "show" => {
-                            let _ = window.show();
-                            let _ = window.set_focus();
+                            if let Some(window) = app.get_webview_window("main") {
+                                let _ = window.show();
+                                let _ = window.set_focus();
+                            }
                         }
                         "hide" => {
-                            let _ = window.hide();
+                            if let Some(window) = app.get_webview_window("main") {
+                                let _ = window.hide();
+                            }
+                        }
+                        // Forward to the frontend so it can run the same handler
+                        // as the in-app button (opens the update modal etc.).
+                        "check_update" => {
+                            if let Some(window) = app.get_webview_window("main") {
+                                let _ = window.show();
+                                let _ = window.set_focus();
+                            }
+                            let _ = app.emit("tray://action", "check_update");
+                        }
+                        "update_vfox" => {
+                            if let Some(window) = app.get_webview_window("main") {
+                                let _ = window.show();
+                                let _ = window.set_focus();
+                            }
+                            let _ = app.emit("tray://action", "update_vfox");
                         }
                         "quit" => {
                             app.exit(0);

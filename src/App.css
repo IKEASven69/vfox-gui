@@ -256,3 +256,185 @@ button, a, input, select {
   }
 }
 
+/* ═══════════════════════════════════════════════════════════════════
+   Liquid Glass — filefind-inspired fluid background system
+   Multi-layer drifting color blobs + SVG displacement + glass overlay
+   ═══════════════════════════════════════════════════════════════════ */
+
+/* Drifting color blobs — positioned behind everything, animated slowly */
+.fluid-blob {
+  position: fixed;
+  z-index: -3;
+  border-radius: 50%;
+  pointer-events: none;
+  filter: url(#liquid-filter);
+  will-change: transform;
+}
+.fluid-blob.b1 {
+  width: 90vmax; height: 70vmax; top: -20%; left: -10%;
+  background: radial-gradient(ellipse, rgba(180, 150, 255, 0.28), transparent 65%);
+  animation: drift1 22s ease-in-out infinite;
+}
+.fluid-blob.b2 {
+  width: 80vmax; height: 50vmax; top: 30%; right: -15%;
+  background: radial-gradient(ellipse, rgba(255, 160, 100, 0.20), transparent 60%);
+  animation: drift2 28s ease-in-out infinite;
+}
+.fluid-blob.b3 {
+  width: 70vmax; height: 55vmax; bottom: -20%; left: 20%;
+  background: radial-gradient(ellipse, rgba(255, 200, 130, 0.16), transparent 55%);
+  animation: drift3 25s ease-in-out infinite;
+}
+.fluid-blob.b4 {
+  width: 60vmax; height: 40vmax; top: 10%; left: 40%;
+  background: radial-gradient(ellipse, rgba(140, 200, 255, 0.14), transparent 50%);
+  animation: drift4 30s ease-in-out infinite;
+}
+/* Dark theme: deeper, richer blob colors */
+[data-theme="dark"] .fluid-blob.b1 { background: radial-gradient(ellipse, rgba(100, 70, 200, 0.22), transparent 65%); }
+[data-theme="dark"] .fluid-blob.b2 { background: radial-gradient(ellipse, rgba(200, 100, 60, 0.18), transparent 60%); }
+[data-theme="dark"] .fluid-blob.b3 { background: radial-gradient(ellipse, rgba(180, 140, 80, 0.14), transparent 55%); }
+[data-theme="dark"] .fluid-blob.b4 { background: radial-gradient(ellipse, rgba(60, 120, 200, 0.12), transparent 50%); }
+
+@keyframes drift1 { 0%,100% { transform: translate(0,0) scale(1); } 50% { transform: translate(8%, 5%) scale(1.08); } }
+@keyframes drift2 { 0%,100% { transform: translate(0,0) scale(1); } 50% { transform: translate(-6%, 4%) scale(1.06); } }
+@keyframes drift3 { 0%,100% { transform: translate(0,0) scale(1); } 50% { transform: translate(5%, -6%) scale(1.05); } }
+@keyframes drift4 { 0%,100% { transform: translate(0,0) scale(1); } 50% { transform: translate(-4%, -3%) scale(1.07); } }
+
+/* Full-screen glass overlay — sits above blobs, below content */
+.glass-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: -2;
+  backdrop-filter: blur(40px) saturate(180%);
+  -webkit-backdrop-filter: blur(40px) saturate(180%);
+  pointer-events: none;
+}
+/* Subtle noise texture for material realism */
+.glass-noise {
+  position: fixed;
+  inset: -50%;
+  z-index: -1;
+  opacity: 0.035;
+  pointer-events: none;
+  background: radial-gradient(circle at 50% 50%, transparent 20%, rgba(255, 255, 255, 0.2) 100%);
+  filter: url(#noise-filter);
+}
+
+/* ── Traffic light titlebar (custom window controls) ── */
+.titlebar {
+  display: flex;
+  align-items: center;
+  padding: 10px 16px 4px;
+  gap: 8px;
+  -webkit-app-region: drag;
+  position: relative;
+  z-index: 10;
+  user-select: none;
+}
+.titlebar .traffic-lights {
+  display: flex;
+  gap: 8px;
+  -webkit-app-region: no-drag;
+}
+.tl-dot {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  border: none;
+  cursor: pointer;
+  -webkit-app-region: no-drag;
+  transition: filter 0.1s, transform 0.1s;
+  box-shadow: inset 0 0 0 0.5px rgba(0, 0, 0, 0.12);
+}
+.tl-dot:hover { filter: brightness(1.15); transform: scale(1.08); }
+.tl-dot.close { background: #fe5f57; }
+.tl-dot.minimize { background: #febc2e; }
+.tl-dot.maximize { background: #28c840; }
+.titlebar .title-text {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-tertiary);
+  margin-left: 6px;
+  letter-spacing: -0.1px;
+  -webkit-app-region: drag;
+}
+
+/* ── Ultra-thin scrollbars (filefind style) ── */
+*::-webkit-scrollbar { width: 5px; height: 5px; }
+*::-webkit-scrollbar-thumb {
+  background: rgba(0, 0, 0, 0.12);
+  border-radius: 2.5px;
+  border: none;
+}
+[data-theme="dark"] *::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.10); }
+*::-webkit-scrollbar-thumb:hover { background: var(--text-tertiary); }
+*::-webkit-scrollbar-track { background: transparent; }
+
+/* ── Glass search input focus glow ── */
+@keyframes search-shimmer {
+  0%, 100% { box-shadow: 0 1px 8px rgba(0, 0, 0, 0.04), 0 0 0 0.5px rgba(0, 0, 0, 0.02) inset; }
+  50% { box-shadow: 0 1px 12px rgba(120, 160, 255, 0.10), 0 0 0 0.5px rgba(140, 180, 255, 0.18) inset; }
+}
+
+/* ── Glass hover rows (filefind translucent style) ── */
+.glass-row {
+  transition: background 0.12s;
+  border-radius: var(--radius-sm);
+}
+.glass-row:hover {
+  background: rgba(255, 255, 255, 0.55);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+}
+[data-theme="dark"] .glass-row:hover {
+  background: rgba(255, 255, 255, 0.06);
+}
+
+/* ── Sliding segmented control indicator ── */
+.seg-control {
+  position: relative;
+  display: flex;
+  border-radius: var(--radius-sm);
+  padding: 2px;
+  background: rgba(255, 255, 255, 0.25);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+}
+[data-theme="dark"] .seg-control {
+  background: rgba(255, 255, 255, 0.06);
+}
+.seg-indicator {
+  position: absolute;
+  top: 2px;
+  bottom: 2px;
+  background: rgba(255, 255, 255, 0.95);
+  border-radius: calc(var(--radius-sm) - 3px);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.08);
+  transition: left 0.22s cubic-bezier(0.25, 0.1, 0.25, 1),
+              width 0.22s cubic-bezier(0.25, 0.1, 0.25, 1);
+  pointer-events: none;
+  z-index: 0;
+}
+[data-theme="dark"] .seg-indicator {
+  background: rgba(255, 255, 255, 0.12);
+}
+.seg-control button {
+  flex: 1;
+  position: relative;
+  z-index: 1;
+  padding: 5px 0;
+  font-size: 11px;
+  font-weight: 500;
+  background: transparent;
+  color: var(--text-tertiary);
+  cursor: pointer;
+  border: none;
+  transition: color 0.15s;
+}
+.seg-control button.active {
+  color: var(--text);
+  font-weight: 600;
+}
+
+

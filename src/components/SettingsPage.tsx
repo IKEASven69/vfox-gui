@@ -4,6 +4,7 @@ import { useTranslation } from "react-i18next";
 import i18n from "../i18n";
 import type { Theme } from "../constants";
 import ThemeSwitch from "./ThemeSwitch";
+import SegmentedControl from "./SegmentedControl";
 import AppleButton from "./AppleButton";
 
 interface Props {
@@ -118,26 +119,17 @@ function Divider() {
   return <div style={{ height: 1, background: "var(--hairline)", margin: "0 16px" }} />;
 }
 
-/** Small language toggle — English / 中文. */
+/** Small language toggle — English / 中文 with sliding indicator. */
 function LangSwitch() {
   const current = i18n.language?.startsWith("en") ? "en" : "zh";
   return (
-    <div className="flex rounded-[6px] p-0.5 text-[11px] font-medium w-[88px]"
-      style={{ background: "var(--card-secondary)", boxShadow: "var(--shadow-sm)" }}>
-      {(["zh", "en"] as const).map((l) => {
-        const active = current === l;
-        return (
-          <button key={l} onClick={() => i18n.changeLanguage(l)}
-            className="flex-1 px-2.5 py-0.5 rounded-[4px] transition-colors"
-            style={{
-              background: active ? "var(--card)" : "transparent",
-              color: active ? "var(--text)" : "var(--text-tertiary)",
-              boxShadow: active ? "var(--shadow-sm)" : "none",
-            }}>
-            {l === "zh" ? "中文" : "EN"}
-          </button>
-        );
-      })}
-    </div>
+    <SegmentedControl
+      value={current}
+      onChange={(v) => i18n.changeLanguage(v)}
+      options={[
+        { value: "zh", label: "中文" },
+        { value: "en", label: "EN" },
+      ]}
+    />
   );
 }
