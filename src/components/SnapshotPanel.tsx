@@ -90,8 +90,8 @@ export default function SnapshotPanel({ busy, selectedSdk, onRestored }: Props) 
         onChange={(e) => setName(e.target.value)}
         onKeyDown={(e) => e.key === "Enter" && save("current")}
         placeholder={t("sidebar.snapshotPlaceholder")}
-        className="w-full bg-transparent outline-none text-[12px] px-2 py-1.5 rounded-[6px] mb-1.5"
-        style={{ background: "var(--card)", color: "var(--text)" }}
+        className="w-full bg-transparent outline-none text-[12px] px-2 py-1.5 rounded-[6px] mb-1.5 glass-input"
+        style={{ color: "var(--text)" }}
         disabled={busy || saving}
       />
       <div className="flex gap-1.5 mb-2">
@@ -99,7 +99,7 @@ export default function SnapshotPanel({ busy, selectedSdk, onRestored }: Props) 
           onClick={() => save("current")}
           disabled={busy || saving || !name.trim() || !selectedSdk}
           className="flex-1 text-[11px] py-1.5 rounded-[6px] font-medium disabled:opacity-30 transition-opacity text-center"
-          style={{ background: "var(--accent)", color: "#fff" }}
+          style={{ background: "rgba(0, 113, 227, 0.85)", color: "#fff", backdropFilter: "blur(10px)" }}
           title={selectedSdk ? t("snapshot.saveSdkHint", { sdk: selectedSdk }) : t("snapshot.pickSdkHint")}
         >
            {t("snapshot.saveCurrent")}
@@ -108,7 +108,7 @@ export default function SnapshotPanel({ busy, selectedSdk, onRestored }: Props) 
           onClick={() => save("all")}
           disabled={busy || saving || !name.trim()}
           className="flex-1 text-[11px] py-1.5 rounded-[6px] font-medium disabled:opacity-30 transition-opacity text-center"
-          style={{ background: "transparent", color: "var(--text-secondary)", border: "1px solid var(--hairline-strong)" }}
+          style={{ background: "rgba(255,255,255,0.4)", color: "var(--text-secondary)", border: "0.5px solid rgba(255,255,255,0.5)", backdropFilter: "blur(10px)" }}
           title={t("snapshot.saveAllHint")}
         >
            {t("snapshot.saveAll")}
@@ -125,9 +125,7 @@ export default function SnapshotPanel({ busy, selectedSdk, onRestored }: Props) 
       ) : (
         <div className="space-y-0.5 max-h-[120px] overflow-y-auto">
           {snapshots.map((s) => (
-            <div key={s.name} className="flex items-center gap-1.5 px-2 py-0.5 rounded-[4px]"
-              onMouseEnter={(e) => (e.currentTarget.style.background = "var(--hairline)")}
-              onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
+            <div key={s.name} className="flex items-center gap-1.5 px-2 py-0.5 rounded-[4px] glass-row"
             >
               <span className="text-[12px] flex-1 truncate" style={{ color: "var(--text)" }}>
                 {s.name}

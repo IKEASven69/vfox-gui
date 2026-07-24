@@ -92,8 +92,8 @@ export default function ProjectScanner({ busy, onInstallSdk }: Props) {
             return (
               <div
                 key={d.sdk}
-                className="flex items-center gap-2 px-2 py-1 rounded-[6px]"
-                style={{ background: "var(--card)" }}
+                className="flex items-center gap-2 px-2 py-1 glass-row"
+                style={{ borderRadius: "var(--radius-sm)" }}
               >
                 <span className="text-[12px] flex-1 truncate" style={{ color: "var(--text)" }}>
                   <span className="font-medium">{d.label}</span>
@@ -115,7 +115,7 @@ export default function ProjectScanner({ busy, onInstallSdk }: Props) {
                     onClick={() => handleAdd(d.sdk)}
                     disabled={busy}
                     className="text-[10px] px-2 py-0.5 rounded-full font-medium shrink-0 disabled:opacity-40"
-                    style={{ background: "var(--success)", color: "#fff" }}
+                    style={{ background: "rgba(48, 181, 83, 0.85)", color: "#fff", backdropFilter: "blur(10px)" }}
                   >
                     {t("sidebar.addSdk")}
                   </button>

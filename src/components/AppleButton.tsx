@@ -1,7 +1,10 @@
 import { type CSSProperties, type ReactNode } from "react";
 
-/** macOS Sequoia pill button. Variants: primary (blue fill), success (green fill), ghost (outline).
- *  Hover now shifts the background (Sequoia depth) instead of only dimming opacity. */
+/** Liquid-glass pill button — translucent fills that blend with the glass
+ *  background, not flat opaque colors. Variants:
+ *  - primary: translucent blue glass (for "switch" / confirm)
+ *  - success: translucent green glass (for "install")
+ *  - ghost: clear glass outline (for secondary actions) */
 export default function AppleButton({
   children,
   onClick,
@@ -14,13 +17,26 @@ export default function AppleButton({
   variant?: "primary" | "success" | "ghost";
 }) {
   const styles: Record<string, CSSProperties & { hoverBg?: string }> = {
-    primary: { background: "var(--accent)", color: "#fff", border: "none", hoverBg: "var(--accent-hover)" },
-    success: { background: "var(--success)", color: "#fff", border: "none", hoverBg: "var(--success-hover, var(--success))" },
+    primary: {
+      background: "rgba(0, 113, 227, 0.85)",
+      color: "#fff",
+      border: "none",
+      backdropFilter: "blur(10px)",
+      hoverBg: "rgba(0, 88, 208, 0.9)",
+    },
+    success: {
+      background: "rgba(48, 181, 83, 0.85)",
+      color: "#fff",
+      border: "none",
+      backdropFilter: "blur(10px)",
+      hoverBg: "rgba(40, 160, 73, 0.9)",
+    },
     ghost: {
-      background: "transparent",
+      background: "rgba(255, 255, 255, 0.4)",
       color: "var(--accent)",
-      border: "1px solid var(--hairline-strong)",
-      hoverBg: "var(--accent-soft)",
+      border: "0.5px solid rgba(255, 255, 255, 0.5)",
+      backdropFilter: "blur(10px)",
+      hoverBg: "rgba(255, 255, 255, 0.6)",
     },
   };
   const s = styles[variant];
@@ -32,9 +48,11 @@ export default function AppleButton({
       className="text-[12px] px-3 py-[5px] font-medium"
       style={{
         ...base,
+        WebkitBackdropFilter: base.backdropFilter,
         borderRadius: "var(--radius-pill)",
         opacity: disabled ? 0.4 : 1,
         cursor: disabled ? "default" : "pointer",
+        transition: "background 0.18s cubic-bezier(0.2,0.8,0.2,1), opacity 0.18s",
       }}
       onMouseEnter={(e) => {
         if (!disabled && hoverBg) e.currentTarget.style.background = hoverBg;
@@ -47,3 +65,4 @@ export default function AppleButton({
     </button>
   );
 }
+

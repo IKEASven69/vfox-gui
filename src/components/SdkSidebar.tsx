@@ -153,18 +153,12 @@ const SdkSidebarItem = memo(function SdkSidebarItem({
     <div
       onClick={() => installed && onSelect(c.name)}
       onContextMenu={(e) => onContextMenu(e, c.name, !!installed)}
-      className="w-full text-left px-2 py-1.5 mb-0.5 flex items-center gap-2.5 transition-colors relative cursor-pointer"
+      className="w-full text-left px-2 py-1.5 mb-0.5 flex items-center gap-2.5 relative cursor-pointer glass-row"
       style={{
-        background: active ? "var(--accent-soft)" : "transparent",
+        background: active ? "rgba(0, 113, 227, 0.12)" : "transparent",
         cursor: installed ? "pointer" : "default",
         opacity: installed ? 1 : 0.55,
         borderRadius: "var(--radius-sm)",
-      }}
-      onMouseEnter={(e) => {
-        if (!active) e.currentTarget.style.background = "var(--hairline)";
-      }}
-      onMouseLeave={(e) => {
-        if (!active) e.currentTarget.style.background = "transparent";
       }}
     >
       <span
@@ -196,7 +190,7 @@ const SdkSidebarItem = memo(function SdkSidebarItem({
           onClick={(e) => { e.stopPropagation(); onAddPlugin(c.name); }}
           disabled={busy}
           className="text-[11px] px-2 py-0.5 rounded-full font-medium"
-          style={{ background: "var(--accent)", color: "#fff", opacity: busy ? 0.4 : 1 }}
+          style={{ background: "rgba(0, 113, 227, 0.85)", color: "#fff", opacity: busy ? 0.4 : 1, backdropFilter: "blur(10px)" }}
         >
            {t("common.add")}
         </button>
