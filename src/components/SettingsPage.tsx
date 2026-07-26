@@ -123,13 +123,15 @@ function Divider() {
 function LangSwitch() {
   const current = i18n.language?.startsWith("en") ? "en" : "zh";
   return (
-    <SegmentedControl
-      value={current}
-      onChange={(v) => i18n.changeLanguage(v)}
-      options={[
-        { value: "zh", label: "中文" },
-        { value: "en", label: "EN" },
-      ]}
-    />
+    <div style={{ width: "120px" }}>
+      <SegmentedControl
+        value={current}
+        onChange={(v) => i18n.changeLanguage(v)}
+        options={[
+          { value: "zh", label: "中文" },
+          { value: "en", label: "EN" },
+        ]}
+      />
+    </div>
   );
 }

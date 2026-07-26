@@ -53,11 +53,22 @@ function TrafficLights({
   win: ReturnType<typeof getCurrentWindow>;
   t: (k: string) => string;
 }) {
+  // Windows: minimize → maximize → close (left to right, right side of window)
+  // macOS:   close → minimize → maximize (left side of window, traffic lights)
+  if (isMac) {
+    return (
+      <div className="traffic-lights">
+        <button className="tl-dot close" onClick={() => win.close()} title={t("common.close")} />
+        <button className="tl-dot minimize" onClick={() => win.minimize()} title={t("common.close")} />
+        <button className="tl-dot maximize" onClick={() => win.toggleMaximize()} title="Maximize" />
+      </div>
+    );
+  }
   return (
     <div className="traffic-lights">
-      <button className="tl-dot close" onClick={() => win.close()} title={t("common.close")} />
       <button className="tl-dot minimize" onClick={() => win.minimize()} title={t("common.close")} />
       <button className="tl-dot maximize" onClick={() => win.toggleMaximize()} title="Maximize" />
+      <button className="tl-dot close" onClick={() => win.close()} title={t("common.close")} />
     </div>
   );
 }
