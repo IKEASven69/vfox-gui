@@ -465,6 +465,12 @@ export default function App() {
         onOpenHelp={() => setView("help")}
         onScanInstall={handleAddPlugin}
         onSnapshotRestored={refresh}
+        onSnapshotBusy={(b) => {
+          // 快照恢复期间置位全局 busy：后端在逐个执行 vfox use，
+          // 此时主区域的安装/切换/卸载必须禁用，防止并发改注册表
+          setBusy(b);
+          setBusyLabel(b ? t("snapshot.restoring") : null);
+        }}
       />
 
       <main className="flex-1 flex flex-col overflow-hidden min-h-0">

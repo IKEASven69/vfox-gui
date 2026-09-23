@@ -14,12 +14,15 @@ interface Props {
   selectedSdk: string | null;
   /** Called after a successful restore so the parent can refresh SDK state. */
   onRestored?: () => void;
+  /** 恢复快照期间置位 App 级 busy：后端在逐个执行 `vfox use --global`，
+   *  此时主区域的安装/切换/卸载若仍可点，会并发修改注册表和 symlink。 */
+  onBusyChange?: (b: boolean) => void;
 }
 
 /** Environment snapshot manager — save/restore SDK version combinations.
  *  Two save modes: "current" stores just the selected SDK (restoring touches
  *  only it); "all" stores every SDK (restoring replays the full environment). */
-export default function SnapshotPanel({ busy, selectedSdk, onRestored }: Props) {
+export default function SnapshotPanel({ busy, selectedSdk, onRestored, onBusyChange }: Props) {
   const { t } = useTranslation();
   const [snapshots, setSnapshots] = useState<SnapshotInfo[]>([]);
   const [saving, setSaving] = useState(false);
@@ -57,6 +60,7 @@ export default function SnapshotPanel({ busy, selectedSdk, onRestored }: Props) 
 
   const doRestore = useCallback(async (n: string) => {
     setSaving(true);
+    onBusyChange?.(true);
     try {
       flash(await invoke<string>("restore_snapshot", { name: n }));
       // Tell the parent to reload SDK state so version labels reflect the
@@ -66,8 +70,9 @@ export default function SnapshotPanel({ busy, selectedSdk, onRestored }: Props) 
       flash(t("snapshot.error", { error: String(e) }));
     } finally {
       setSaving(false);
+      onBusyChange?.(false);
     }
-  }, [onRestored]);
+  }, [onRestored, onBusyChange]);
 
   const handleDelete = async (n: string) => {
     try {

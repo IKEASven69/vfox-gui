@@ -86,7 +86,8 @@
     "restoreMessage": "This will switch SDK versions back to when the snapshot was saved. Single SDK snapshots affect only that SDK; full snapshots restore all SDKs.",
     "error": "Error: {{error}}",
     "deleteConfirm": "Delete Snapshot",
-    "deleteTitle": "Delete snapshot \"{{name}}\"?"
+    "deleteTitle": "Delete snapshot \"{{name}}\"?",
+    "restoring": "Restoring snapshot…"
   },
   "update": {
     "checking": "Checking for updates…",

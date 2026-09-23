@@ -23,6 +23,7 @@ interface Props {
   onOpenHelp: () => void;
   onScanInstall: (sdk: string) => void;
   onSnapshotRestored?: () => void;
+  onSnapshotBusy?: (b: boolean) => void;
 }
 
 export default function SdkSidebar({
@@ -30,7 +31,7 @@ export default function SdkSidebar({
   sdkQuery, busy, sdksCount, view,
   onSelect, onAddPlugin, onContextMenu,
   onSdkQueryChange, onOpenSettings, onOpenHelp,
-  onScanInstall, onSnapshotRestored,
+  onScanInstall, onSnapshotRestored, onSnapshotBusy,
 }: Props) {
   const { t } = useTranslation();
   return (
@@ -45,7 +46,7 @@ export default function SdkSidebar({
       <ProjectScanner busy={busy} onInstallSdk={onScanInstall} />
 
       {/* Environment snapshots */}
-      <SnapshotPanel busy={busy} selectedSdk={selected} onRestored={onSnapshotRestored} />
+      <SnapshotPanel busy={busy} selectedSdk={selected} onRestored={onSnapshotRestored} onBusyChange={onSnapshotBusy} />
       {/* Spotlight-style SDK search */}
       <div className="px-4 pt-4 pb-2">
         <div
