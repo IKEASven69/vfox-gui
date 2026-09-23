@@ -62,7 +62,8 @@
     "lts": "LTS",
     "currentLabel": "Current",
     "eol": "EOL",
-    "preRelease": "预发布"
+    "preRelease": "预发布",
+    "uninstallCurrentHint": "当前使用中的版本：请先切换到其他版本再卸载"
   },
   "project": {
     "history": "项目版本历史",
@@ -83,7 +84,6 @@
     "saveSuccess": "已保存快照「{{name}}」",
     "restoreConfirm": "恢复快照",
     "restoreMessage": "这会将 SDK 版本切换回快照保存时的版本。单个 SDK 快照只影响该 SDK，全部快照恢复所有 SDK。",
-    "restoreButton": "恢复",
     "error": "错误: {{error}}",
     "deleteConfirm": "删除快照",
     "deleteTitle": "删除快照「{{name}}」？"

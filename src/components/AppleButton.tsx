@@ -10,11 +10,14 @@ export default function AppleButton({
   onClick,
   disabled,
   variant = "ghost",
+  title,
 }: {
   children: ReactNode;
   onClick: () => void;
   disabled?: boolean;
   variant?: "primary" | "success" | "ghost";
+  /** 禁用原因等悬停提示 */
+  title?: string;
 }) {
   const styles: Record<string, CSSProperties & { hoverBg?: string }> = {
     primary: {
@@ -45,6 +48,7 @@ export default function AppleButton({
     <button
       disabled={disabled}
       onClick={onClick}
+      title={title}
       className="text-[12px] px-3 py-[5px] font-medium"
       style={{
         ...base,

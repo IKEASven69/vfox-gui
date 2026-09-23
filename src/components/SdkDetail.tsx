@@ -221,7 +221,16 @@ const VersionRow = memo(function VersionRow({
           {!isCurrent && (
             <AppleButton variant="primary" disabled={busy} onClick={onUse}>{t("detail.switch")}</AppleButton>
           )}
-          <AppleButton variant="ghost" disabled={busy} onClick={onRemove}>{t("detail.uninstall")}</AppleButton>
+          {/* 当前使用中的版本禁止卸载：卸载 active 版本会留下悬空 symlink
+              和指向已删目录的 PATH，shell 里直接报错 */}
+          <AppleButton
+            variant="ghost"
+            disabled={busy || isCurrent}
+            onClick={onRemove}
+            title={isCurrent ? t("detail.uninstallCurrentHint") : undefined}
+          >
+            {t("detail.uninstall")}
+          </AppleButton>
         </div>
       </div>
     </Row>

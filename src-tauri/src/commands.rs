@@ -273,14 +273,18 @@ pub async fn remove_version(sdk: String, version: String) -> Result<String, Stri
         // partially-installed/orphaned version dirs (uninstall reports an error
         // but the dir still exists). If so, remove the dir directly so the
         // version disappears from `list_sdks` (which reads the filesystem).
-        if out.is_err() {
-            let dir = crate::vfox::vfox_home()
-                .join("cache")
-                .join(&sdk_for_fallback)
-                .join(format!("v-{}", version_for_fallback));
-            if dir.exists() {
-                let _ = std::fs::remove_dir_all(&dir);
-                return Ok(format!("已清理残留目录: {}", dir.display()));
+        // 超时等与"未安装"状态不一致无关的失败不做直删兜底——绕过 vfox
+        // 注册表删目录会造成 GUI 与 CLI 显示分裂。
+        if let Err(e) = &out {
+            if !e.contains("超时") {
+                let dir = crate::vfox::vfox_home()
+                    .join("cache")
+                    .join(&sdk_for_fallback)
+                    .join(format!("v-{}", version_for_fallback));
+                if dir.exists() {
+                    let _ = std::fs::remove_dir_all(&dir);
+                    return Ok(format!("已清理残留目录: {}", dir.display()));
+                }
             }
         }
         out
