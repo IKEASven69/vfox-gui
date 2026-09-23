@@ -118,7 +118,7 @@ fn write_tool_versions(dir: &str, sdk: &str, version: &str) -> Result<(), String
             let trimmed = line.trim();
             if trimmed.is_empty() || trimmed.starts_with('#') {
                 lines.push(line);
-            } else if trimmed.starts_with(&format!("{} ", sdk)) {
+            } else if trimmed.split_whitespace().next() == Some(sdk) {
                 lines.push(format!("{} {}", sdk, version));
                 found = true;
             } else {
@@ -195,33 +195,12 @@ fn append_history(dir: &str, sdk: &str, version: &str) -> Result<(), String> {
     Ok(())
 }
 
-/// Current timestamp as "YYYY-MM-DD HH:MM" (no chrono dependency — format by hand).
+/// Current **local** timestamp as "YYYY-MM-DD HH:MM".
+///
+/// 此前手写历法算法输出的是 UTC——UTC+8 用户的项目版本时间线全部差
+/// 8 小时，函数名却叫 chrono_now 暗示本地时间。用 chrono 的 Local 修正。
 fn chrono_now() -> String {
-    use std::time::{SystemTime, UNIX_EPOCH};
-    let secs = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|d| d.as_secs())
-        .unwrap_or(0);
-    // Convert epoch seconds to UTC date-time via the civil-from-days algorithm.
-    let days = (secs / 86400) as i64;
-    let secs_of_day = (secs % 86400) as i64;
-    let (y, m, d) = civil_from_days(days + 719468);
-    let hh = secs_of_day / 3600;
-    let mm = (secs_of_day % 3600) / 60;
-    format!("{:04}-{:02}-{:02} {:02}:{:02}", y, m, d, hh, mm)
-}
-
-/// Howard Hinnant's civil-from-days algorithm. Returns (year, month, day).
-fn civil_from_days(z: i64) -> (i64, i64, i64) {
-    let era = if z >= 0 { z / 146097 } else { (z - 146096) / 146097 };
-    let doe = (z - era * 146097) as i64;
-    let yoe = (doe - doe / 1460 + doe / 36524 - doe / 146096) / 365;
-    let y = yoe + era * 400;
-    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
-    let mp = (5 * doy + 2) / 153;
-    let d = doy - (153 * mp + 2) / 5 + 1;
-    let m = if mp < 10 { mp + 3 } else { mp - 9 };
-    (if m <= 2 { y + 1 } else { y }, m, d)
+    chrono::Local::now().format("%Y-%m-%d %H:%M").to_string()
 }
 
 /// Install a new SDK version: `vfox install <sdk>@<version>`.
