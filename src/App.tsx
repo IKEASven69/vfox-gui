@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback, useMemo } from "react";
+import { useEffect, useState, useCallback, useMemo, useRef } from "react";
 import { useTranslation } from "react-i18next";
 import { invoke } from "@tauri-apps/api/core";
 import { listen, UnlistenFn } from "@tauri-apps/api/event";
@@ -281,9 +281,14 @@ export default function App() {
   }, []);
 
   // ── toast ──
+  // toast 计时器句柄：连续操作时互相覆盖会让第二条提前消失
+  const toastTimerRef = useRef<number | null>(null);
   const flash = useCallback((msg: string) => {
     setToast(msg);
-    setTimeout(() => setToast(null), 2500);
+    // 连续 flash 时清掉上一个计时器，否则第一条的计时器会把第二条
+    // toast 提前清空
+    if (toastTimerRef.current !== null) window.clearTimeout(toastTimerRef.current);
+    toastTimerRef.current = window.setTimeout(() => setToast(null), 2500);
   }, []);
 
   // ── actions ──
@@ -303,9 +308,12 @@ export default function App() {
       }
       await refresh();
       markAvailable(version, true);
+      // 刚发生的切换要立刻出现在项目版本时间线里（此前只依赖
+      // projectPath 变化才刷新，切完看不到直到重选目录）
+      void loadHistory();
     } catch (e) { setError(String(e)); }
     finally { setBusy(false); setBusyLabel(null); }
-  }, [versionScope, projectPath, flash, refresh, markAvailable]);
+  }, [versionScope, projectPath, flash, refresh, markAvailable, loadHistory]);
 
   const handleInstall = useCallback(async (sdk: string, version: string) => {
     setBusy(true); setBusyLabel(t("progress.installing", { sdk, version }));
@@ -461,6 +469,24 @@ export default function App() {
 
       <main className="flex-1 flex flex-col overflow-hidden min-h-0">
         {busyLabel && <ProgressBar label={busyLabel} install={installProgress} />}
+
+        {/* 设置/帮助页也需要展示错误：此前只有详情页渲染 error，在设置页
+            点"更新 vfox"失败后界面毫无反应 */}
+        {(view === "settings" || view === "help") && error && (
+          <div
+            className="mx-8 mt-4 mb-2 px-4 py-3 text-[12px] flex items-start justify-between gap-3 shrink-0"
+            style={{ background: "var(--danger-soft)", color: "var(--danger)", borderRadius: "var(--radius-md)", backdropFilter: "blur(10px)" }}
+          >
+            <pre className="whitespace-pre-wrap font-mono m-0 flex-1">{error}</pre>
+            <button
+              onClick={() => setError(null)}
+              className="shrink-0 text-[12px] font-medium px-2.5 py-1 rounded-full"
+              style={{ background: "var(--danger)", color: "#fff", border: "none" }}
+            >
+              ✕
+            </button>
+          </div>
+        )}
 
         {view === "settings" ? (
           <SettingsPage
