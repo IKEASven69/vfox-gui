@@ -42,11 +42,14 @@ pub struct InstallProgress {
 }
 
 /// Every SDK vfox manages, with installed versions and the current pick.
-/// Kept synchronous: it only reads the filesystem (<50ms) and the frontend
-/// consumes the Vec directly (no Result wrapper).
+/// async + spawn_blocking：Tauri 2 里同步 command 默认在主线程执行，而这个
+/// 命令要 read_dir 整个 plugin+cache 树——冷启动或杀软实时扫描时会卡 UI。
+/// 成功路径返回 Vec（前端无需处理 Result），仅 JoinError 走 Err。
 #[tauri::command]
-pub fn list_sdks() -> Vec<Sdk> {
-    vfox::list_sdks()
+pub async fn list_sdks() -> Result<Vec<Sdk>, String> {
+    tauri::async_runtime::spawn_blocking(vfox::list_sdks)
+        .await
+        .map_err(|e| format!("后台任务失败: {}", e))
 }
 
 /// Switch the active version: `vfox use <sdk>@<version>`.
@@ -715,8 +718,10 @@ fn run_vfox_streaming(args: &[&str], tolerate_shell_err: bool, app: &AppHandle) 
             // Drain stderr incrementally, emitting progress events.
             // vfox 的错误信息（"failed to install" 等）打在 stderr——必须
             // 原文累积并随返回值透传，否则前端永远只能看到兜底文案。
+            // 缓冲原始字节、只在完整行边界做 UTF-8 解码：1024 字节块边界
+            // 可能切在中文等多字节字符中间，逐块 lossy 会插入 U+FFFD 乱码。
             let mut err_buf = [0u8; 1024];
-            let mut pending = String::new();
+            let mut pending: Vec<u8> = Vec::new();
             let mut stderr_text = String::new();
             loop {
                 let n = match stderr.read(&mut err_buf) {
@@ -724,13 +729,11 @@ fn run_vfox_streaming(args: &[&str], tolerate_shell_err: bool, app: &AppHandle) 
                     Ok(n) => n,
                     Err(_) => break,
                 };
-                pending.push_str(&String::from_utf8_lossy(&err_buf[..n]));
-                while let Some(idx) = pending.find(|c| c == '\r' || c == '\n') {
-                    let line: String = pending.drain(..idx).collect();
-                    if !pending.is_empty() {
-                        pending.remove(0);
-                    }
-                    let clean = strip_ansi(&line);
+                pending.extend_from_slice(&err_buf[..n]);
+                while let Some(idx) = pending.iter().position(|&b| b == b'\r' || b == b'\n') {
+                    let line_bytes: Vec<u8> = pending.drain(..idx).collect();
+                    pending.remove(0); // 行结束符
+                    let clean = strip_ansi(&String::from_utf8_lossy(&line_bytes));
                     if clean.trim().is_empty() {
                         continue;
                     }
@@ -741,8 +744,8 @@ fn run_vfox_streaming(args: &[&str], tolerate_shell_err: bool, app: &AppHandle) 
                     }
                 }
             }
-            if !pending.trim().is_empty() {
-                let clean = strip_ansi(&pending);
+            if pending.iter().any(|&b| !b.is_ascii_whitespace()) {
+                let clean = strip_ansi(&String::from_utf8_lossy(&pending));
                 stderr_text.push_str(&clean);
                 stderr_text.push('\n');
                 if let Some(prog) = parse_progress(&clean) {
