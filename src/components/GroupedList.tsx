@@ -1,4 +1,4 @@
-import { type ReactNode } from "react";
+import { type ReactElement, type ReactNode } from "react";
 
 /** Liquid-glass grouped list — translucent container, rows separated by
  *  hairlines. Glass style uses backdrop-filter + semi-transparent bg instead
@@ -29,14 +29,19 @@ export default function GroupedList({
       }}
     >
       {Array.isArray(children)
-        ? children.map((child, i) => (
-            <div
-              key={i}
-              style={{ borderTop: i === 0 ? "none" : "1px solid var(--hairline)" }}
-            >
-              {child}
-            </div>
-          ))
+        ? children.map((child, i) => {
+            // 用子元素自身的 key（版本号等稳定标识）作 wrapper 的 key：
+            // 数组下标会让首行删除后整组 DOM 重建、memo 失效
+            const key = (child as ReactElement).key;
+            return (
+              <div
+                key={key ?? i}
+                style={{ borderTop: i === 0 ? "none" : "1px solid var(--hairline)" }}
+              >
+                {child}
+              </div>
+            );
+          })
         : children}
     </div>
   );

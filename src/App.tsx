@@ -199,10 +199,12 @@ export default function App() {
     });
     if (selectedDir && typeof selectedDir === "string") {
       setProjectPath(selectedDir);
-    } else {
+    } else if (!projectPath) {
+      // 取消选择只在从未选过目录时退回全局；已有项目路径的"重选后取消"
+      // 应保持原状态，跳回全局与用户意图相反
       setVersionScope("global");
     }
-  }, []);
+  }, [projectPath, t]);
 
   useEffect(() => {
     if (versionScope === "project" && !projectPath) pickProjectDir();
