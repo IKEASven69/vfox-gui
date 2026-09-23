@@ -98,6 +98,9 @@ pub async fn use_version(
 /// Write or update a `.tool-versions` file in the project directory.
 /// Format: `<sdk> <version>`, one per line. Existing entries for other SDKs
 /// are preserved; the entry for `sdk` is replaced if it already exists.
+///
+/// 写入必须原子化且读失败必须中止：旧实现 `File::open` 失败时静默拿到空
+/// 列表再截断重写，会把其他 SDK 的条目全部抹掉（杀软/IDE 短暂持锁时触发）。
 fn write_tool_versions(dir: &str, sdk: &str, version: &str) -> Result<(), String> {
     use std::io::{BufRead, Write};
     let path = std::path::Path::new(dir).join(".tool-versions");
@@ -105,18 +108,21 @@ fn write_tool_versions(dir: &str, sdk: &str, version: &str) -> Result<(), String
     let mut lines: Vec<String> = Vec::new();
     let mut found = false;
     if path.exists() {
-        if let Ok(file) = std::fs::File::open(&path) {
-            for line in std::io::BufReader::new(file).lines() {
-                let line = line.unwrap_or_default();
-                let trimmed = line.trim();
-                if trimmed.is_empty() || trimmed.starts_with('#') {
-                    lines.push(line);
-                } else if trimmed.starts_with(&format!("{} ", sdk)) {
-                    lines.push(format!("{} {}", sdk, version));
-                    found = true;
-                } else {
-                    lines.push(line);
-                }
+        // 读失败直接报错中止，绝不带着空列表去截断重写
+        let file = std::fs::File::open(&path)
+            .map_err(|e| format!("无法读取现有 .tool-versions（为防清空已中止写入）: {}", e))?;
+        for line in std::io::BufReader::new(file).lines() {
+            let line = line.map_err(|e| format!("读取 .tool-versions 出错: {}", e))?;
+            // 去掉可能存在的 BOM（否则首行条目匹配不上，会追加出重复行）
+            let line = line.strip_prefix('\u{feff}').map(str::to_string).unwrap_or(line);
+            let trimmed = line.trim();
+            if trimmed.is_empty() || trimmed.starts_with('#') {
+                lines.push(line);
+            } else if trimmed.starts_with(&format!("{} ", sdk)) {
+                lines.push(format!("{} {}", sdk, version));
+                found = true;
+            } else {
+                lines.push(line);
             }
         }
     }
@@ -124,11 +130,23 @@ fn write_tool_versions(dir: &str, sdk: &str, version: &str) -> Result<(), String
         lines.push(format!("{} {}", sdk, version));
     }
 
-    let mut file = std::fs::File::create(&path)
-        .map_err(|e| format!("无法创建 .tool-versions: {}", e))?;
+    let mut content = String::new();
     for l in &lines {
-        writeln!(file, "{}", l).map_err(|e| format!("写入失败: {}", e))?;
+        content.push_str(l);
+        content.push('\n');
     }
+    // 先写临时文件再 rename（Windows 上 fs::rename 会替换既有文件），
+    // 中途崩溃/断电只会留下 .tmp 残留，不会留下半个清单
+    let tmp = path.with_extension("tool-versions.tmp");
+    {
+        let mut file = std::fs::File::create(&tmp)
+            .map_err(|e| format!("无法创建临时文件 {}: {}", tmp.display(), e))?;
+        file.write_all(content.as_bytes())
+            .map_err(|e| format!("写入 .tool-versions 失败: {}", e))?;
+        file.flush().map_err(|e| format!("刷新 .tool-versions 失败: {}", e))?;
+    }
+    std::fs::rename(&tmp, &path)
+        .map_err(|e| format!("替换 .tool-versions 失败（内容保留在 {}）: {}", tmp.display(), e))?;
     Ok(())
 }
 
@@ -696,7 +714,7 @@ fn run_vfox_streaming(args: &[&str], tolerate_shell_err: bool, app: &AppHandle) 
         .env("__VFOX_SHELL", "1");
 
     let app = app.clone();
-    let (tx, rx) = std::sync::mpsc::channel::<Result<(std::process::ExitStatus, Vec<u8>), String>>();
+    let (tx, rx) = std::sync::mpsc::channel::<Result<(std::process::ExitStatus, Vec<u8>, String), String>>();
     let child = cmd.spawn().map_err(|e| format!("无法启动 vfox: {}", e))?;
     // Remember the PID so we can kill it from the timeout branch (the Child
     // itself moves into the worker thread).
@@ -704,7 +722,7 @@ fn run_vfox_streaming(args: &[&str], tolerate_shell_err: bool, app: &AppHandle) 
 
     let mut child_moved = child;
     let worker = std::thread::spawn(move || {
-        let result = (|| -> Result<(std::process::ExitStatus, Vec<u8>), String> {
+        let result = (|| -> Result<(std::process::ExitStatus, Vec<u8>, String), String> {
             let mut stderr = child_moved.stderr.take().expect("stderr piped");
             let mut stdout = child_moved.stdout.take().expect("stdout piped");
 
@@ -716,8 +734,11 @@ fn run_vfox_streaming(args: &[&str], tolerate_shell_err: bool, app: &AppHandle) 
             });
 
             // Drain stderr incrementally, emitting progress events.
+            // vfox 的错误信息（"failed to install" 等）打在 stderr——必须
+            // 原文累积并随返回值透传，否则前端永远只能看到兜底文案。
             let mut err_buf = [0u8; 1024];
             let mut pending = String::new();
+            let mut stderr_text = String::new();
             loop {
                 let n = match stderr.read(&mut err_buf) {
                     Ok(0) => break,
@@ -734,6 +755,8 @@ fn run_vfox_streaming(args: &[&str], tolerate_shell_err: bool, app: &AppHandle) 
                     if clean.trim().is_empty() {
                         continue;
                     }
+                    stderr_text.push_str(&clean);
+                    stderr_text.push('\n');
                     if let Some(prog) = parse_progress(&clean) {
                         let _ = app.emit(INSTALL_PROGRESS_EVENT, prog);
                     }
@@ -741,6 +764,8 @@ fn run_vfox_streaming(args: &[&str], tolerate_shell_err: bool, app: &AppHandle) 
             }
             if !pending.trim().is_empty() {
                 let clean = strip_ansi(&pending);
+                stderr_text.push_str(&clean);
+                stderr_text.push('\n');
                 if let Some(prog) = parse_progress(&clean) {
                     let _ = app.emit(INSTALL_PROGRESS_EVENT, prog);
                 }
@@ -748,16 +773,19 @@ fn run_vfox_streaming(args: &[&str], tolerate_shell_err: bool, app: &AppHandle) 
 
             let stdout_bytes = stdout_handle.join().unwrap_or_default();
             let status = child_moved.wait().map_err(|e| format!("等待 vfox 退出失败: {}", e))?;
-            Ok((status, stdout_bytes))
+            Ok((status, stdout_bytes, stderr_text))
         })();
         let _ = tx.send(result);
     });
 
     match rx.recv_timeout(Duration::from_secs(600)) {
-        Ok(Ok((status, stdout_bytes))) => {
+        Ok(Ok((status, stdout_bytes, stderr_text))) => {
             let mut combined = String::new();
             if !stdout_bytes.is_empty() {
                 combined.push_str(&String::from_utf8_lossy(&stdout_bytes));
+            }
+            if !stderr_text.trim().is_empty() {
+                combined.push_str(&stderr_text);
             }
             if status.success() || (tolerate_shell_err && combined.contains("open a new shell")) {
                 Ok(combined)
@@ -1161,6 +1189,7 @@ fn glob_file_exists(dir: &std::path::Path, pattern: &str) -> bool {
 /// When omitted, all SDKs with a selected version are saved (full environment).
 #[tauri::command]
 pub async fn save_snapshot(name: String, only_sdk: Option<String>) -> Result<String, String> {
+    validate_snapshot_name(&name)?;
     tauri::async_runtime::spawn_blocking(move || {
         let mut sdks = crate::vfox::list_sdks();
         if let Some(sdk) = &only_sdk {
@@ -1195,6 +1224,25 @@ pub async fn save_snapshot(name: String, only_sdk: Option<String>) -> Result<Str
     })
     .await
     .map_err(|e| format!("后台任务失败: {}", e))?
+}
+
+/// 快照名称校验：名称会被拼进 `snapshots/<name>.json`，不做校验时
+/// `..\..\x` 这类输入可以穿越到快照目录外写/删任意 .json 文件。
+fn validate_snapshot_name(name: &str) -> Result<(), String> {
+    if name.trim().is_empty() {
+        return Err("快照名称不能为空".into());
+    }
+    if name.chars().count() > 100 {
+        return Err("快照名称过长（最多 100 字符）".into());
+    }
+    if name.contains('/') || name.contains('\\') {
+        return Err("快照名称不能包含路径分隔符（/ 或 \\）".into());
+    }
+    const INVALID: &[char] = &[':', '*', '?', '"', '<', '>', '|'];
+    if name.chars().any(|c| INVALID.contains(&c) || c.is_control()) {
+        return Err("快照名称包含文件名非法字符（: * ? \" < > | 或控制字符）".into());
+    }
+    Ok(())
 }
 
 /// List all saved snapshots with their SDK counts.
@@ -1239,6 +1287,7 @@ pub struct SnapshotInfo {
 /// Delete a named snapshot.
 #[tauri::command]
 pub async fn delete_snapshot(name: String) -> Result<String, String> {
+    validate_snapshot_name(&name)?;
     tauri::async_runtime::spawn_blocking(move || {
         let path = crate::vfox::vfox_home()
             .join("snapshots")
@@ -1263,6 +1312,7 @@ pub async fn delete_snapshot(name: String) -> Result<String, String> {
 /// Returns a human-readable summary.
 #[tauri::command]
 pub async fn restore_snapshot(name: String) -> Result<String, String> {
+    validate_snapshot_name(&name)?;
     tauri::async_runtime::spawn_blocking(move || {
         let path = crate::vfox::vfox_home()
             .join("snapshots")
