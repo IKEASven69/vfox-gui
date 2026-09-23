@@ -290,9 +290,17 @@ export default function App() {
   const handleUse = useCallback(async (sdk: string, version: string) => {
     setBusy(true); setBusyLabel(t("progress.switching", { version })); setError(null);
     try {
-      await invoke("use_version", { sdk, version, scope: versionScope,
+      // 后端返回值可能带 ⚠️ 警告（如项目 .tool-versions 写入失败），
+      // 必须展示；其余情况保持简洁的成功文案
+      const msg = await invoke<string>("use_version", { sdk, version, scope: versionScope,
         projectPath: versionScope === "project" ? projectPath : null });
-      flash(`${sdk} → ${version}`);
+      const warn = (msg || "").split("\n").find((l) => l.includes("⚠️"));
+      if (warn) {
+        flash(warn);
+        setError(warn.replace("⚠️ ", ""));
+      } else {
+        flash(`${sdk} → ${version}`);
+      }
       await refresh();
       markAvailable(version, true);
     } catch (e) { setError(String(e)); }
