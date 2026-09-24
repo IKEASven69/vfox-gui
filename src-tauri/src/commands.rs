@@ -11,7 +11,6 @@
 
 use crate::vfox::{self, Sdk};
 use std::io::Read;
-use std::process::Command;
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
 use tauri::{AppHandle, Emitter};
@@ -615,6 +614,23 @@ fn run_vfox(args: &[&str], tolerate_shell_err: bool) -> Result<String, String> {
     run_vfox_with_timeout(args, tolerate_shell_err, Duration::from_secs(60))
 }
 
+/// 构造不闪控制台窗口的子进程命令（issue #1）。
+///
+/// Windows 上 GUI（窗口子系统）进程 spawn 控制台程序（vfox / taskkill）
+/// 时系统会为其分配新控制台——表现为每次点击都闪一个黑色 cmd 窗口。
+/// 加 CREATE_NO_WINDOW 标志抑制。
+fn spawn_quiet(program: &str) -> std::process::Command {
+    #[allow(unused_mut)]
+    let mut cmd = std::process::Command::new(program);
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+        cmd.creation_flags(CREATE_NO_WINDOW);
+    }
+    cmd
+}
+
 /// Same as `run_vfox` but with a custom timeout. Used by `vfox upgrade`
 /// (downloads the new binary — can be slow) which needs more than the default.
 fn run_vfox_with_timeout(
@@ -623,7 +639,7 @@ fn run_vfox_with_timeout(
     timeout: Duration,
 ) -> Result<String, String> {
     // Build the command outside the thread so spawn errors surface directly.
-    let mut cmd = Command::new("vfox");
+    let mut cmd = spawn_quiet("vfox");
     cmd.args(args)
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped())
@@ -692,7 +708,7 @@ fn run_vfox_with_timeout(
 /// forever. The whole child+drain runs in a worker thread; we wait on a
 /// channel with the timeout and kill the child if it expires.
 fn run_vfox_streaming(args: &[&str], tolerate_shell_err: bool, app: &AppHandle) -> Result<String, String> {
-    let mut cmd = Command::new("vfox");
+    let mut cmd = spawn_quiet("vfox");
     cmd.args(args)
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped())
@@ -789,9 +805,9 @@ fn run_vfox_streaming(args: &[&str], tolerate_shell_err: bool, app: &AppHandle) 
             // reads unblock and the thread can wind down. We use `taskkill` on
             // Windows (kills the whole tree) / `kill` elsewhere.
             #[cfg(windows)]
-            let _ = Command::new("taskkill").args(["/PID", &pid.to_string(), "/T", "/F"]).spawn();
+            let _ = spawn_quiet("taskkill").args(["/PID", &pid.to_string(), "/T", "/F"]).spawn();
             #[cfg(not(windows))]
-            let _ = Command::new("kill").args(["-9", &pid.to_string()]).spawn();
+            let _ = spawn_quiet("kill").args(["-9", &pid.to_string()]).spawn();
             let _ = worker.join();
             Err("vfox 安装超时（10 分钟），可能网络卡住。".to_string())
         }
