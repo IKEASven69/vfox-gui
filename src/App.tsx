@@ -240,17 +240,26 @@ export default function App() {
 
   useEffect(() => { refresh(); }, [refresh]);
 
+  // 可用版本列表请求序号：防快速切换 SDK 时旧响应覆盖新响应
+  const availableSeqRef = useRef(0);
+
   const loadAvailable = useCallback(async (sdk: string) => {
+    // 请求序号守卫：search_versions 是网络调用，快速切换 SDK 时旧的慢响应
+    // 后到会覆盖新 SDK 的列表（标题与内容错位）
+    const seq = ++availableSeqRef.current;
     setSearchLoading(true);
     setAvailable([]);
     try {
-      setAvailable(await invoke<AvailableVersion[]>("search_versions", { sdk }));
+      const r = await invoke<AvailableVersion[]>("search_versions", { sdk });
+      if (seq !== availableSeqRef.current) return;
+      setAvailable(r);
     } catch (e) {
+      if (seq !== availableSeqRef.current) return;
       setError(t("detail.searchFailed", { error: String(e) }));
     } finally {
-      setSearchLoading(false);
+      if (seq === availableSeqRef.current) setSearchLoading(false);
     }
-  }, []);
+  }, [t]);
 
   const loadDiskUsage = useCallback(async () => {
     try {
@@ -315,7 +324,7 @@ export default function App() {
       void loadHistory();
     } catch (e) { setError(String(e)); }
     finally { setBusy(false); setBusyLabel(null); }
-  }, [versionScope, projectPath, flash, refresh, markAvailable, loadHistory]);
+  }, [t, versionScope, projectPath, flash, refresh, markAvailable, loadHistory]);
 
   const handleInstall = useCallback(async (sdk: string, version: string) => {
     setBusy(true); setBusyLabel(t("progress.installing", { sdk, version }));
@@ -330,7 +339,7 @@ export default function App() {
       loadDiskUsage();
     } catch (e) { setError(String(e)); }
     finally { setBusy(false); setBusyLabel(null); setInstallProgress(null); }
-  }, [flash, refresh, markAvailable, loadDiskUsage]);
+  }, [t, flash, refresh, markAvailable, loadDiskUsage]);
 
   const handleRemove = useCallback(async (sdk: string, version: string) => {
     setConfirmState({
@@ -349,7 +358,7 @@ export default function App() {
         finally { setBusy(false); setBusyLabel(null); }
       },
     });
-  }, [flash, refresh, markAvailable, loadDiskUsage]);
+  }, [t, flash, refresh, markAvailable, loadDiskUsage]);
 
   const handleAddPlugin = useCallback(async (name: string) => {
     setBusy(true); setBusyLabel(t("progress.addingPlugin", { name })); setError(null);
@@ -360,7 +369,7 @@ export default function App() {
       setSelected(name);
     } catch (e) { setError(String(e)); }
     finally { setBusy(false); setBusyLabel(null); }
-  }, [flash, refresh]);
+  }, [t, flash, refresh]);
 
   const handleRemovePlugin = useCallback(async (name: string) => {
     setCtxMenu(null);
@@ -378,7 +387,7 @@ export default function App() {
         finally { setBusy(false); setBusyLabel(null); }
       },
     });
-  }, [flash, refresh]);
+  }, [t, flash, refresh]);
 
   const handleRefresh = useCallback(async () => {
     setLoading(true); setError(null);
@@ -432,7 +441,7 @@ export default function App() {
       await refresh();
     } catch (e) { setError(String(e)); }
     finally { setBusy(false); setBusyLabel(null); }
-  }, [flash, refresh]);
+  }, [t, flash, refresh]);
 
   // ── tray action listener (must be after checkForUpdate/handleVfoxUpdate) ──
   useEffect(() => {

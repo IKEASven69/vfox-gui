@@ -46,7 +46,7 @@ export default function ProjectScanner({ busy, onInstallSdk }: Props) {
     } finally {
       setScanning(false);
     }
-  }, []);
+  }, [t]);
 
   const handleAdd = useCallback(async (sdk: string) => {
     await onInstallSdk(sdk);
