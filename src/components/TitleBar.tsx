@@ -16,10 +16,11 @@ export default function TitleBar() {
       <svg style={{ position: "absolute", width: 0, height: 0 }}>
         <defs>
           <filter id="liquid-filter">
-            <feTurbulence type="fractalNoise" baseFrequency="0.009" numOctaves={3} seed="3" result="noise">
-              <animate attributeName="baseFrequency" values="0.009;0.013;0.009" dur="12s" repeatCount="indefinite" />
-              <animate attributeName="seed" values="3;7;3" dur="24s" repeatCount="indefinite" />
-            </feTurbulence>
+            {/* baseFrequency/seed 不做 SMIL 动画：feTurbulence 参数每帧变化会
+                持续重算滤镜并强制上层 backdrop-filter 重新采样——窗口静止时
+                GPU 也不降载，且 prefers-reduced-motion 管不到 SMIL。
+                动感交给 .fluid-blob 的 CSS transform 漂移（合成器友好）。 */}
+            <feTurbulence type="fractalNoise" baseFrequency="0.011" numOctaves={3} seed="3" result="noise" />
             <feDisplacementMap in="SourceGraphic" in2="noise" scale="35" xChannelSelector="R" yChannelSelector="G" />
           </filter>
           <filter id="noise-filter">
@@ -36,11 +37,18 @@ export default function TitleBar() {
       <div className="glass-noise" />
 
       {/* ── Title bar ── */}
-      <div className="titlebar">
+      {/* data-tauri-drag-region：Tauri 官方拖拽机制，与 CSS app-region 并用
+          （后者管触摸/笔输入，前者保证未来放开 macOS/Linux 构建时仍可拖动）。
+          属性只认事件直接命中的元素，因此标题文本也要带上。 */}
+      <div
+        className="titlebar"
+        data-tauri-drag-region
+        onDoubleClick={() => win.toggleMaximize()}
+      >
         {/* macOS: dots on the left; Windows/Linux: dots on the right */}
         {isMac && <TrafficLights win={win} t={t} />}
-        <span className="title-text">vfox</span>
-        <div style={{ flex: 1 }} />
+        <span className="title-text" data-tauri-drag-region>vfox</span>
+        <div style={{ flex: 1 }} data-tauri-drag-region />
         {!isMac && <TrafficLights win={win} t={t} />}
       </div>
     </>

@@ -210,17 +210,6 @@ code {
   user-select: text;
 }
 
-/* ── macOS Sequoia scrollbars (slightly chunkier, auto-hide feel) ── */
-*::-webkit-scrollbar { width: 8px; height: 8px; }
-*::-webkit-scrollbar-thumb {
-  background: var(--hairline-strong);
-  border-radius: 4px;
-  border: 2px solid transparent;
-  background-clip: content-box;
-}
-*::-webkit-scrollbar-thumb:hover { background: var(--text-tertiary); background-clip: content-box; }
-*::-webkit-scrollbar-track { background: transparent; }
-
 /* ── Animations ── */
 @keyframes vfox-spin {
   to { transform: rotate(360deg); }
@@ -318,6 +307,15 @@ button, a, input, select {
 [data-theme="dark"] .fluid-blob.b3 { background: radial-gradient(ellipse, rgba(180, 140, 80, 0.14), transparent 55%); }
 [data-theme="dark"] .fluid-blob.b4 { background: radial-gradient(ellipse, rgba(60, 120, 200, 0.12), transparent 50%); }
 
+/* System theme + system dark: 上面的 [data-theme="dark"] 规则在
+   theme="system"（无 data-theme 属性）时不命中，这里补齐同路径 */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .fluid-blob.b1 { background: radial-gradient(ellipse, rgba(100, 70, 200, 0.22), transparent 65%); }
+  :root:not([data-theme="light"]) .fluid-blob.b2 { background: radial-gradient(ellipse, rgba(200, 100, 60, 0.18), transparent 60%); }
+  :root:not([data-theme="light"]) .fluid-blob.b3 { background: radial-gradient(ellipse, rgba(180, 140, 80, 0.14), transparent 55%); }
+  :root:not([data-theme="light"]) .fluid-blob.b4 { background: radial-gradient(ellipse, rgba(60, 120, 200, 0.12), transparent 50%); }
+}
+
 @keyframes drift1 { 0%,100% { transform: translate(0,0) scale(1); } 50% { transform: translate(8%, 5%) scale(1.08); } }
 @keyframes drift2 { 0%,100% { transform: translate(0,0) scale(1); } 50% { transform: translate(-6%, 4%) scale(1.06); } }
 @keyframes drift3 { 0%,100% { transform: translate(0,0) scale(1); } 50% { transform: translate(5%, -6%) scale(1.05); } }
@@ -390,6 +388,9 @@ button, a, input, select {
   border: none;
 }
 [data-theme="dark"] *::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.10); }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) *::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.10); }
+}
 *::-webkit-scrollbar-thumb:hover { background: var(--text-tertiary); }
 *::-webkit-scrollbar-track { background: transparent; }
 
@@ -444,6 +445,9 @@ button, a, input, select {
 [data-theme="dark"] .seg-control {
   background: rgba(255, 255, 255, 0.06);
 }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .seg-control { background: rgba(255, 255, 255, 0.06); }
+}
 .seg-indicator {
   position: absolute;
   top: 2px;
@@ -458,6 +462,9 @@ button, a, input, select {
 }
 [data-theme="dark"] .seg-indicator {
   background: rgba(255, 255, 255, 0.12);
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .seg-indicator { background: rgba(255, 255, 255, 0.12); }
 }
 .seg-control button {
   flex: 1;
