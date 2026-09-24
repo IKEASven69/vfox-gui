@@ -454,6 +454,25 @@ export default function App() {
     return () => { cancelled = true; unlisten?.(); };
   }, [checkForUpdate, handleVfoxUpdate]);
 
+  // ── 启动静默检查更新 ──
+  // 此前入口藏在 设置→检查更新 两层深处，多数用户永远不知道有新版。
+  // 静默检查：有更新只 toast 轻提示，不弹窗不打断（要装去设置页或托盘点
+  // 「检查应用更新」）。失败静默——启动时的更新检查不该变成报错。
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const upd = await check();
+        if (!cancelled && upd?.available) {
+          flash(t("toast.updateAvailable", { version: upd.version }));
+        }
+      } catch { /* 静默 */ }
+    })();
+    return () => { cancelled = true; };
+    // 仅启动一次；flash 为稳定引用，t 取挂载时语言即可
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   const handleSdkContextMenu = useCallback((e: React.MouseEvent, sdk: string, installed: boolean) => {
     e.preventDefault();
     setCtxMenu({ sdk, x: e.clientX, y: e.clientY, installed });

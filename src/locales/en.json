@@ -194,6 +194,7 @@
     "switched": "{{sdk}} → {{version}}",
     "pluginAdded": "Added {{name}}",
     "pluginRemoved": "Removed {{name}}",
-    "vfoxUpdated": "vfox updated to the latest version"
+    "vfoxUpdated": "vfox updated to the latest version",
+    "updateAvailable": "New version v{{version}} available — update from Settings"
   }
 }

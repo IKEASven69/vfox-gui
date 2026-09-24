@@ -59,6 +59,11 @@ jobs:
       - name: Install JS deps
         run: pnpm install --frozen-lockfile
 
+      # zh/en locale 一致性守卫：一边加 key 另一边漏译、插值占位符漂移
+      # 在构建期就该失败，而不是等用户看到缺文案
+      - name: Check locale consistency (zh/en)
+        run: node scripts/check-locales.mjs
+
       # Guard against the version-mismatch bug: if the tag is v0.5.0 but
       # tauri.conf.json still says 0.2.1, the installer would be mislabeled and
       # the updater would silently break. Fail fast before building.

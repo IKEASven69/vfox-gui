@@ -194,6 +194,7 @@
     "switched": "{{sdk}} → {{version}}",
     "pluginAdded": "已添加 {{name}}",
     "pluginRemoved": "已移除 {{name}}",
-    "vfoxUpdated": "vfox 已更新到最新版本"
+    "vfoxUpdated": "vfox 已更新到最新版本",
+    "updateAvailable": "发现新版本 v{{version}}，可到 设置 → 检查更新 安装"
   }
 }
