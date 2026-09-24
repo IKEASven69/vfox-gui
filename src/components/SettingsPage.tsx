@@ -126,7 +126,12 @@ function LangSwitch() {
     <div style={{ width: "120px" }}>
       <SegmentedControl
         value={current}
-        onChange={(v) => i18n.changeLanguage(v)}
+        onChange={(v) => {
+          i18n.changeLanguage(v);
+          // 同步托盘菜单/提示/窗口标题（Rust 侧只在启动时按持久化语言构建，
+          // 不通知它就停留在上次启动的语言）
+          invoke("set_app_language", { lang: v }).catch(console.error);
+        }}
         options={[
           { value: "zh", label: "中文" },
           { value: "en", label: "EN" },

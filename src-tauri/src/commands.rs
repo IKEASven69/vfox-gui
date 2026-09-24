@@ -1228,6 +1228,26 @@ pub async fn save_snapshot(name: String, only_sdk: Option<String>) -> Result<Str
     .map_err(|e| format!("后台任务失败: {}", e))?
 }
 
+/// 持久化 UI 语言并重建托盘菜单/提示/窗口标题。
+///
+/// 托盘和窗口标题在 Rust 侧、只在启动时按持久化语言构建一次；前端切语言
+/// 时必须调用此命令同步，否则托盘停留在上次启动的语言。
+/// 同步命令（主线程执行）——托盘/菜单 API 要求。
+#[tauri::command]
+pub fn set_app_language(
+    app: AppHandle,
+    tray: tauri::State<'_, crate::TrayHandle>,
+    lang: String,
+) -> Result<(), String> {
+    if lang != "zh" && lang != "en" {
+        return Err(format!("不支持的语言: {lang}"));
+    }
+    std::fs::write(crate::vfox::vfox_home().join("gui-lang"), &lang)
+        .map_err(|e| format!("持久化语言设置失败: {e}"))?;
+    crate::apply_tray(&app, &tray.0, &lang);
+    Ok(())
+}
+
 /// 快照名称校验：名称会被拼进 `snapshots/<name>.json`，不做校验时
 /// `..\..\x` 这类输入可以穿越到快照目录外写/删任意 .json 文件。
 fn validate_snapshot_name(name: &str) -> Result<(), String> {
