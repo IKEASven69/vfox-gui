@@ -15,8 +15,11 @@ use serde::Serialize;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-/// Where vfox keeps everything. Honors $VFOX_HOME, falls back to the
-/// default `%USERPROFILE%\.version-fox` on Windows, `~/.version-fox` elsewhere.
+/// Where vfox keeps everything. Honors $VFOX_HOME first. For the default we
+/// probe both known locations: newer vfox (e.g. 1.0.11) uses `~/.vfox`, older
+/// releases used `~/.version-fox` — picking the one that actually exists,
+/// otherwise the GUI would report "0 installed" on machines where vfox lives
+/// in the other directory.
 pub fn vfox_home() -> PathBuf {
     if let Ok(custom) = std::env::var("VFOX_HOME") {
         return PathBuf::from(custom);
@@ -24,7 +27,13 @@ pub fn vfox_home() -> PathBuf {
     let home = std::env::var("USERPROFILE")
         .or_else(|_| std::env::var("HOME"))
         .unwrap_or_default();
-    Path::new(&home).join(".version-fox")
+    let modern = Path::new(&home).join(".vfox");
+    let legacy = Path::new(&home).join(".version-fox");
+    if modern.is_dir() {
+        modern
+    } else {
+        legacy
+    }
 }
 
 /// A single SDK the user can manage (e.g. nodejs, java, python).
@@ -173,7 +182,9 @@ mod tests {
     #[test]
     fn vfox_home_resolves() {
         let home = vfox_home();
-        assert!(home.ends_with(".version-fox") || std::env::var("VFOX_HOME").is_ok());
+        assert!(
+            home.ends_with(".version-fox") || home.ends_with(".vfox") || std::env::var("VFOX_HOME").is_ok()
+        );
     }
 
     #[test]
