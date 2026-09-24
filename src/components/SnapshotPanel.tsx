@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { useTranslation } from "react-i18next";
 import ConfirmDialog from "./ConfirmDialog";
@@ -29,6 +29,7 @@ export default function SnapshotPanel({ busy, selectedSdk, onRestored, onBusyCha
   const [name, setName] = useState("");
   const [msg, setMsg] = useState<string | null>(null);
   const [restoreConfirm, setRestoreConfirm] = useState<string | null>(null);
+  const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     try {
@@ -38,10 +39,16 @@ export default function SnapshotPanel({ busy, selectedSdk, onRestored, onBusyCha
 
   useEffect(() => { load(); }, [load]);
 
-  const flash = (m: string) => {
+  // 与 App 层同款：连续操作时清掉上一个计时器，卸载时不再 setState
+  const msgTimerRef = useRef<number | null>(null);
+  useEffect(() => () => {
+    if (msgTimerRef.current !== null) window.clearTimeout(msgTimerRef.current);
+  }, []);
+  const flash = useCallback((m: string) => {
     setMsg(m);
-    setTimeout(() => setMsg(null), 3000);
-  };
+    if (msgTimerRef.current !== null) window.clearTimeout(msgTimerRef.current);
+    msgTimerRef.current = window.setTimeout(() => setMsg(null), 3000);
+  }, []);
 
   const save = async (scope: "current" | "all") => {
     if (!name.trim()) return;
@@ -74,12 +81,16 @@ export default function SnapshotPanel({ busy, selectedSdk, onRestored, onBusyCha
     }
   }, [onRestored, onBusyChange]);
 
-  const handleDelete = async (n: string) => {
+  // 删除走确认弹窗（与其他破坏性操作一致），失败不再静默吞掉
+  const doDelete = useCallback(async (n: string) => {
     try {
       await invoke("delete_snapshot", { name: n });
+      flash(t("snapshot.deleted", { name: n }));
       await load();
-    } catch { /* ignore */ }
-  };
+    } catch (e) {
+      flash(String(e));
+    }
+  }, [flash, load, t]);
 
   return (
     <div className="px-4 py-3 border-b" style={{ borderColor: "var(--hairline)" }}>
@@ -93,7 +104,11 @@ export default function SnapshotPanel({ busy, selectedSdk, onRestored, onBusyCha
       <input
         value={name}
         onChange={(e) => setName(e.target.value)}
-        onKeyDown={(e) => e.key === "Enter" && save("current")}
+        onKeyDown={(e) => {
+          // 回车复用"保存当前 SDK"按钮的禁用条件：selectedSdk 为空时回车
+          // 会绕过按钮禁用、把 null 传成 onlySdk 等价于"保存全部"
+          if (e.key === "Enter" && selectedSdk && !busy && !saving) save("current");
+        }}
         placeholder={t("sidebar.snapshotPlaceholder")}
         className="w-full bg-transparent outline-none text-[12px] px-2 py-1.5 rounded-[6px] mb-1.5 glass-input"
         style={{ color: "var(--text)" }}
@@ -148,7 +163,7 @@ export default function SnapshotPanel({ busy, selectedSdk, onRestored, onBusyCha
                 {t("snapshot.restoreButton")}
               </button>
               <button
-                onClick={() => handleDelete(s.name)}
+                onClick={() => setDeleteConfirm(s.name)}
                 className="text-[10px] px-1.5 py-0.5 rounded-full font-medium opacity-50 hover:opacity-100 transition-opacity"
                 style={{ color: "var(--danger)" }}
                 title={t("sidebar.deleteSnapshot")}
@@ -171,6 +186,21 @@ export default function SnapshotPanel({ busy, selectedSdk, onRestored, onBusyCha
             pending: async () => { await doRestore(restoreConfirm); },
           }}
           onClose={() => setRestoreConfirm(null)}
+        />
+      )}
+
+      {/* Delete confirmation — 快照也是用户数据，卸载/恢复都有确认，
+          删除不该一键即删 */}
+      {deleteConfirm && (
+        <ConfirmDialog
+          state={{
+            title: t("snapshot.deleteConfirm") + `「${deleteConfirm}」`,
+            message: t("snapshot.deleteMessage"),
+            confirmLabel: t("common.delete"),
+            destructive: true,
+            pending: async () => { await doDelete(deleteConfirm); },
+          }}
+          onClose={() => setDeleteConfirm(null)}
         />
       )}
     </div>

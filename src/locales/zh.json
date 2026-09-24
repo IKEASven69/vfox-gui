@@ -87,9 +87,11 @@
     "restoreConfirm": "恢复快照",
     "restoreMessage": "这会将 SDK 版本切换回快照保存时的版本。单个 SDK 快照只影响该 SDK，全部快照恢复所有 SDK。",
     "error": "错误: {{error}}",
-    "deleteConfirm": "删除快照",
+    "deleteConfirm": "确认删除快照",
     "deleteTitle": "删除快照「{{name}}」？",
-    "restoring": "正在恢复快照…"
+    "restoring": "正在恢复快照…",
+    "deleteMessage": "删除后无法恢复（不进回收站）。",
+    "deleted": "快照「{{name}}」已删除"
   },
   "update": {
     "checking": "正在检查更新…",
