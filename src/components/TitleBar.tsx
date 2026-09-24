@@ -59,15 +59,15 @@ function TrafficLights({
     return (
       <div className="traffic-lights">
         <button className="tl-dot close" onClick={() => win.close()} title={t("common.close")} />
-        <button className="tl-dot minimize" onClick={() => win.minimize()} title={t("common.close")} />
-        <button className="tl-dot maximize" onClick={() => win.toggleMaximize()} title="Maximize" />
+        <button className="tl-dot minimize" onClick={() => win.minimize()} title={t("common.minimize")} />
+        <button className="tl-dot maximize" onClick={() => win.toggleMaximize()} title={t("common.maximize")} />
       </div>
     );
   }
   return (
     <div className="traffic-lights">
-      <button className="tl-dot minimize" onClick={() => win.minimize()} title={t("common.close")} />
-      <button className="tl-dot maximize" onClick={() => win.toggleMaximize()} title="Maximize" />
+      <button className="tl-dot minimize" onClick={() => win.minimize()} title={t("common.minimize")} />
+      <button className="tl-dot maximize" onClick={() => win.toggleMaximize()} title={t("common.maximize")} />
       <button className="tl-dot close" onClick={() => win.close()} title={t("common.close")} />
     </div>
   );

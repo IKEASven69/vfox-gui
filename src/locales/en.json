@@ -18,7 +18,9 @@
     "installed": "Installed",
     "available": "Available",
     "version": "Version",
-    "official": "Official"
+    "official": "Official",
+    "minimize": "Minimize",
+    "maximize": "Maximize"
   },
   "sidebar": {
     "title": "vfox",
@@ -155,7 +157,7 @@
     "ctrlSlashDesc": "Open Help",
     "faq": "FAQ",
     "faq1q": "Version switched but terminal still shows old version?",
-    "faq1a": "Open a <0>new</0> terminal window — existing ones don't auto-refresh. If new windows don't work either, install the shell hook: <1>vfox add &lt;shell&gt;</1> (e.g. vfox add bash / powershell).",
+    "faq1a": "Open a <0>new</0> terminal window — existing ones don't auto-refresh. If new windows don't work either, the vfox shell hook isn't installed; run <1>vfox add bash</1> to install it (same for powershell).",
     "faq2q": "Installation failed (especially Java)?",
     "faq2a": "Most likely a corrupted download or interrupted extraction. Uninstall the broken version in the GUI and reinstall. Also check 'Update vfox CLI' to ensure you're on the latest.",
     "faq3q": "Uninstall button does nothing?",
@@ -190,6 +192,6 @@
     "switched": "{{sdk}} → {{version}}",
     "pluginAdded": "Added {{name}}",
     "pluginRemoved": "Removed {{name}}",
-    "vfoxUpdated": "vfox is up to date"
+    "vfoxUpdated": "vfox updated to the latest version"
   }
 }
