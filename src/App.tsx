@@ -326,9 +326,15 @@ export default function App() {
     finally { setBusy(false); setBusyLabel(null); }
   }, [t, versionScope, projectPath, flash, refresh, markAvailable, loadHistory]);
 
+  // ── install cancellation ──
+  // 用户点了取消后，install_version 会因进程被杀而以错误结束；用这个
+  // ref 区分「主动取消」和「真失败」，前者给 toast 不给错误横幅。
+  const cancelRequestedRef = useRef(false);
+
   const handleInstall = useCallback(async (sdk: string, version: string) => {
     setBusy(true); setBusyLabel(t("progress.installing", { sdk, version }));
     setInstallProgress({ percent: null, speed: null, phase: "starting" });
+    cancelRequestedRef.current = false;
     setError(null);
     try {
       await invoke("install_version", { sdk, version });
@@ -337,9 +343,23 @@ export default function App() {
       markAvailable(version, true);
       // Reload disk usage so the new version's size shows up immediately.
       loadDiskUsage();
-    } catch (e) { setError(String(e)); }
+    } catch (e) {
+      if (cancelRequestedRef.current) flash(t("toast.installCancelled"));
+      else setError(String(e));
+    }
     finally { setBusy(false); setBusyLabel(null); setInstallProgress(null); }
   }, [t, flash, refresh, markAvailable, loadDiskUsage]);
+
+  const handleCancelInstall = useCallback(async () => {
+    cancelRequestedRef.current = true;
+    try {
+      await invoke<boolean>("cancel_install");
+    } catch {
+      // 取消动作本身失败（如没有正在运行的安装）——不打断用户，
+      // 安装若仍在进行会按正常流程结束。
+      cancelRequestedRef.current = false;
+    }
+  }, []);
 
   const handleRemove = useCallback(async (sdk: string, version: string) => {
     setConfirmState({
@@ -504,7 +524,13 @@ export default function App() {
       />
 
       <main className="flex-1 flex flex-col overflow-hidden min-h-0">
-        {busyLabel && <ProgressBar label={busyLabel} install={installProgress} />}
+        {busyLabel && (
+          <ProgressBar
+            label={busyLabel}
+            install={installProgress}
+            onCancel={installProgress ? handleCancelInstall : undefined}
+          />
+        )}
 
         {/* 设置/帮助页也需要展示错误：此前只有详情页渲染 error，在设置页
             点"更新 vfox"失败后界面毫无反应 */}

@@ -132,6 +132,8 @@ pub fn run() {
 
             apply_tray(&app_handle, &tray, &lang);
             app.manage(TrayHandle(tray));
+            // 安装取消槽：install_version 登记 PID，cancel_install 消费
+            app.manage(commands::InstallSlot::default());
 
             Ok(())
         })
@@ -148,6 +150,7 @@ pub fn run() {
             commands::refresh_available,
             commands::use_version,
             commands::install_version,
+            commands::cancel_install,
             commands::remove_version,
             commands::add_plugin,
             commands::remove_plugin,

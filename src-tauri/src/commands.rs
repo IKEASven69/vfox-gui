@@ -29,6 +29,46 @@ static AVAILABLE_CACHE: Mutex<Option<(Instant, Vec<AvailableSdk>)>> = Mutex::new
 /// Frontend event name for streaming install progress.
 pub const INSTALL_PROGRESS_EVENT: &str = "vfox://install-progress";
 
+/// 安装取消槽：记录当前正在安装的 vfox 子进程 PID，供 `cancel_install`
+/// 杀进程用。Arc 包一层是因为 `install_version` 的 spawn_blocking 闭包需要
+/// 'static 生命周期，State 的借用进不去。同一时刻只支持一个安装任务
+/// （GUI 本来就是串行安装），后来的安装会覆盖前面的 PID。
+#[derive(Default)]
+pub struct InstallSlot(std::sync::Arc<Mutex<Option<u32>>>);
+
+impl InstallSlot {
+    /// 克隆内部句柄，供移进后台线程的闭包使用。
+    fn handle(&self) -> std::sync::Arc<Mutex<Option<u32>>> {
+        std::sync::Arc::clone(&self.0)
+    }
+}
+
+/// 取消当前安装：按槽里记录的 PID 杀掉整棵进程树（vfox 可能带起
+/// 解压/安装器子进程，`/T` 必须带）。返回是否真的杀了（没有正在
+/// 运行的安装时返回 false，前端据此不做任何提示）。
+#[tauri::command]
+pub fn cancel_install(slot: tauri::State<'_, InstallSlot>) -> Result<bool, String> {
+    let pid = slot
+        .0
+        .lock()
+        .map_err(|_| "安装状态锁中毒".to_string())?
+        .take();
+    let Some(pid) = pid else { return Ok(false) };
+    kill_pid(pid);
+    Ok(true)
+}
+
+/// 杀掉整棵进程树。Windows 用 taskkill /T /F（也复用于安装超时分支），
+/// 其他平台退回 `kill -9`。
+fn kill_pid(pid: u32) {
+    #[cfg(windows)]
+    let _ = spawn_quiet("taskkill")
+        .args(["/PID", &pid.to_string(), "/T", "/F"])
+        .output();
+    #[cfg(not(windows))]
+    let _ = spawn_quiet("kill").arg("-9").arg(pid.to_string()).output();
+}
+
 /// One progress update emitted to the frontend during `vfox install`.
 /// `phase` distinguishes download (with a percent) from post-download steps
 /// (extract/install) that vfox reports without a number.
@@ -220,14 +260,18 @@ fn chrono_now() -> String {
 #[tauri::command]
 pub async fn install_version(
     app: AppHandle,
+    slot: tauri::State<'_, InstallSlot>,
     sdk: String,
     version: String,
 ) -> Result<String, String> {
     let target = format!("{}@{}", sdk, version);
     let sdk_check = sdk.clone();
     let version_check = version.clone();
+    // 取消槽句柄随闭包进后台线程：run_vfox_streaming 在 spawn 后登记
+    // PID，退出前清掉，保证槽里永远只有"正在跑"的 PID。
+    let cancel_slot = slot.handle();
     tauri::async_runtime::spawn_blocking(move || {
-        let out = run_vfox_streaming(&["install", &target], true, &app)?;
+        let out = run_vfox_streaming(&["install", &target], true, &app, &cancel_slot)?;
         // vfox exits 0 even on failure — verify the version actually exists on
         // disk now. If it doesn't, surface the real error instead of pretending
         // success (the "安装显示成功但实际没装上" bug).
@@ -707,7 +751,15 @@ fn run_vfox_with_timeout(
 /// Has a 10-minute hard timeout so a hung download can never freeze the UI
 /// forever. The whole child+drain runs in a worker thread; we wait on a
 /// channel with the timeout and kill the child if it expires.
-fn run_vfox_streaming(args: &[&str], tolerate_shell_err: bool, app: &AppHandle) -> Result<String, String> {
+///
+/// `cancel_slot` 登记子进程 PID（前端 `cancel_install` 据此杀安装）；
+/// 所有退出路径都会清槽，不留陈旧 PID。
+fn run_vfox_streaming(
+    args: &[&str],
+    tolerate_shell_err: bool,
+    app: &AppHandle,
+    cancel_slot: &std::sync::Arc<Mutex<Option<u32>>>,
+) -> Result<String, String> {
     let mut cmd = spawn_quiet("vfox");
     cmd.args(args)
         .stdout(std::process::Stdio::piped())
@@ -721,6 +773,10 @@ fn run_vfox_streaming(args: &[&str], tolerate_shell_err: bool, app: &AppHandle) 
     // Remember the PID so we can kill it from the timeout branch (the Child
     // itself moves into the worker thread).
     let pid = child.id();
+    // 登记到取消槽；后续所有退出路径统一在函数尾部清槽。
+    if let Ok(mut guard) = cancel_slot.lock() {
+        *guard = Some(pid);
+    }
 
     let mut child_moved = child;
     let worker = std::thread::spawn(move || {
@@ -780,7 +836,7 @@ fn run_vfox_streaming(args: &[&str], tolerate_shell_err: bool, app: &AppHandle) 
         let _ = tx.send(result);
     });
 
-    match rx.recv_timeout(Duration::from_secs(600)) {
+    let result = match rx.recv_timeout(Duration::from_secs(600)) {
         Ok(Ok((status, stdout_bytes, stderr_text))) => {
             let mut combined = String::new();
             if !stdout_bytes.is_empty() {
@@ -802,16 +858,22 @@ fn run_vfox_streaming(args: &[&str], tolerate_shell_err: bool, app: &AppHandle) 
         Ok(Err(e)) => Err(e),
         Err(_) => {
             // Timeout — kill the process tree by PID so the worker's blocking
-            // reads unblock and the thread can wind down. We use `taskkill` on
-            // Windows (kills the whole tree) / `kill` elsewhere.
-            #[cfg(windows)]
-            let _ = spawn_quiet("taskkill").args(["/PID", &pid.to_string(), "/T", "/F"]).spawn();
-            #[cfg(not(windows))]
-            let _ = spawn_quiet("kill").args(["-9", &pid.to_string()]).spawn();
+            // reads unblock and the thread can wind down.
+            kill_pid(pid);
             let _ = worker.join();
             Err("vfox 安装超时（10 分钟），可能网络卡住。".to_string())
         }
+    };
+    // 无论正常结束、被取消还是超时，退出前都清掉取消槽，避免下一个
+    // 安装开始前 cancel_install 杀到陈旧 PID。
+    if let Ok(mut guard) = cancel_slot.lock() {
+        // 只有槽里还是自己时才清——理论上串行安装不会出现别人覆盖，
+        // 但防御一下以防未来支持并发安装。
+        if *guard == Some(pid) {
+            *guard = None;
+        }
     }
+    result
 }
 
 /// Parse one line of vfox install output into a progress event.

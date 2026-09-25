@@ -6,9 +6,12 @@ import { useTranslation } from "react-i18next";
 export default function ProgressBar({
   label,
   install,
+  onCancel,
 }: {
   label: string;
   install?: { percent: number | null; speed: string | null; phase: string } | null;
+  /** 提供时显示取消按钮（当前有可取消的安装在跑）。 */
+  onCancel?: () => void;
 }) {
   const { t } = useTranslation();
   const pct = install?.percent ?? null;
@@ -36,6 +39,19 @@ export default function ProgressBar({
           <span className="text-[11px] font-mono" style={{ color: "var(--text-tertiary)" }}>
             {install.speed}
           </span>
+        )}
+        {onCancel && (
+          <button
+            onClick={onCancel}
+            className="shrink-0 text-[11px] font-medium px-2 py-0.5 rounded-full transition-opacity hover:opacity-80"
+            style={{
+              background: "transparent",
+              color: "var(--danger)",
+              border: "1px solid var(--danger)",
+            }}
+          >
+            {t("progress.cancelInstall")}
+          </button>
         )}
       </div>
       {downloading && (

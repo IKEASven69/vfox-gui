@@ -186,10 +186,12 @@
     "addingPlugin": "Adding plugin {{name}}…",
     "removingPlugin": "Removing plugin {{name}}…",
     "updatingVfox": "Updating vfox CLI…",
-    "installStarted": "Installing {{name}}…"
+    "installStarted": "Installing {{name}}…",
+    "cancelInstall": "Cancel install"
   },
   "toast": {
     "installed": "Installed {{version}}",
+    "installCancelled": "Install cancelled",
     "uninstalled": "Uninstalled {{version}}",
     "switched": "{{sdk}} → {{version}}",
     "pluginAdded": "Added {{name}}",

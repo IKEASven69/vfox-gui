@@ -186,10 +186,12 @@
     "addingPlugin": "添加插件 {{name}}…",
     "removingPlugin": "移除插件 {{name}}…",
     "updatingVfox": "正在更新 vfox CLI…",
-    "installStarted": "安装 {{name}}…"
+    "installStarted": "安装 {{name}}…",
+    "cancelInstall": "取消安装"
   },
   "toast": {
     "installed": "已安装 {{version}}",
+    "installCancelled": "安装已取消",
     "uninstalled": "已卸载 {{version}}",
     "switched": "{{sdk}} → {{version}}",
     "pluginAdded": "已添加 {{name}}",
