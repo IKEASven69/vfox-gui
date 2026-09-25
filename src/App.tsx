@@ -394,16 +394,23 @@ export default function App() {
   // 用户点了取消后，install_version 会因进程被杀而以错误结束；用这个
   // ref 区分「主动取消」和「真失败」，前者给 toast 不给错误横幅。
   const cancelRequestedRef = useRef(false);
+  // 正在进行的安装数：installProgress 只在**最后一个**安装结束时清掉。
+  // 并发安装（A 装着又对 B 发起）时，先结束的若直接清进度，会把还在跑
+  // 的安装的百分比/取消按钮一起抹掉。
+  const activeInstallsRef = useRef(0);
   // 快照恢复占用的全局操作 id：onSnapshotBusy(true/false) 配对登记/结束，
   // 防止重复 true 时重复计数导致 busy 永远不清零。
   const snapshotOpRef = useRef<number | null>(null);
 
-  const handleInstall = useCallback(async (sdk: string, version: string) => {
-    const op = beginOp(sdk, t("progress.installing", { sdk, version }));
-    setInstallProgress({ percent: null, speed: null, phase: "starting" });
+  // 共用安装流程：初始化/引用计数清理 installProgress + 取消语义。
+  // 详情页安装与扫描项目的链式安装都走这里，保证进度状态不残留。
+  // 真失败向外抛（调用方决定 setError）；主动取消就地消化成 toast。
+  // `op` 是调用方的 busy 操作 id——进度事件的 message 更新到它的标签上。
+  const runInstall = useCallback(async (sdk: string, version: string, op: number) => {
+    activeInstallsRef.current += 1;
     installLabelOpRef.current = op;
+    setInstallProgress({ percent: null, speed: null, phase: "starting" });
     cancelRequestedRef.current = false;
-    setError(null);
     try {
       await invoke("install_version", { sdk, version });
       flash(t("toast.installed", { version }));
@@ -413,13 +420,24 @@ export default function App() {
       loadDiskUsage();
     } catch (e) {
       if (cancelRequestedRef.current) flash(t("toast.installCancelled"));
-      else setError(String(e));
+      else throw e;
     } finally {
-      setInstallProgress(null);
-      installLabelOpRef.current = null;
-      endOp(op, sdk);
+      activeInstallsRef.current -= 1;
+      if (activeInstallsRef.current <= 0) {
+        setInstallProgress(null);
+        installLabelOpRef.current = null;
+      }
     }
-  }, [t, flash, refresh, markAvailable, loadDiskUsage, beginOp, endOp]);
+  }, [t, flash, refresh, markAvailable, loadDiskUsage]);
+
+  const handleInstall = useCallback(async (sdk: string, version: string) => {
+    const op = beginOp(sdk, t("progress.installing", { sdk, version }));
+    setError(null);
+    try {
+      await runInstall(sdk, version, op);
+    } catch (e) { setError(String(e)); }
+    finally { endOp(op, sdk); }
+  }, [t, beginOp, endOp, runInstall]);
 
   const handleCancelInstall = useCallback(async () => {
     cancelRequestedRef.current = true;
@@ -487,6 +505,9 @@ export default function App() {
 
   // 扫描项目的一键安装：插件未装时先装插件，再装检测到的版本；插件已装
   // 则直接装版本。与 handleAddPlugin（只装插件）分开，语义不同。
+  // 安装阶段走 runInstall：初始化并按引用计数清理 installProgress——
+  // 此前既不初始化也不清理，残留的百分比/速度/取消按钮会泄漏到之后
+  // 任意非安装操作的进度条上。
   const handleScanInstall = useCallback(async (sdk: string, version: string | null) => {
     const pluginInstalled = installedMap.has(sdk);
     const op = beginOp(sdk, t("progress.addingPlugin", { name: sdk }));
@@ -500,15 +521,11 @@ export default function App() {
       }
       if (version) {
         updateOpLabel(op, t("progress.installing", { sdk, version }));
-        installLabelOpRef.current = op;
-        await invoke("install_version", { sdk, version });
-        flash(t("toast.installed", { version }));
-        await refresh();
-        installLabelOpRef.current = null;
+        await runInstall(sdk, version, op);
       }
     } catch (e) { setError(String(e)); }
     finally { endOp(op, sdk); }
-  }, [installedMap, t, flash, refresh, beginOp, updateOpLabel, endOp]);
+  }, [installedMap, t, flash, refresh, beginOp, updateOpLabel, endOp, runInstall]);
 
   const handleRefresh = useCallback(async () => {
     setLoading(true); setError(null);
