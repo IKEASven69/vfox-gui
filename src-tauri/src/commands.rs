@@ -799,6 +799,7 @@ fn run_vfox_streaming(
             let mut err_buf = [0u8; 1024];
             let mut pending: Vec<u8> = Vec::new();
             let mut stderr_text = String::new();
+            let mut throttle = ProgressThrottle::default();
             loop {
                 let n = match stderr.read(&mut err_buf) {
                     Ok(0) => break,
@@ -816,7 +817,9 @@ fn run_vfox_streaming(
                     stderr_text.push_str(&clean);
                     stderr_text.push('\n');
                     if let Some(prog) = parse_progress(&clean) {
-                        let _ = app.emit(INSTALL_PROGRESS_EVENT, prog);
+                        if let Some(emit_now) = throttle.push(prog) {
+                            let _ = app.emit(INSTALL_PROGRESS_EVENT, emit_now);
+                        }
                     }
                 }
             }
@@ -825,8 +828,14 @@ fn run_vfox_streaming(
                 stderr_text.push_str(&clean);
                 stderr_text.push('\n');
                 if let Some(prog) = parse_progress(&clean) {
-                    let _ = app.emit(INSTALL_PROGRESS_EVENT, prog);
+                    if let Some(emit_now) = throttle.push(prog) {
+                        let _ = app.emit(INSTALL_PROGRESS_EVENT, emit_now);
+                    }
                 }
+            }
+            // 流结束：补发窗口内挂起的最后一帧（否则终态可能永远发不出去）
+            if let Some(emit_now) = throttle.take_pending() {
+                let _ = app.emit(INSTALL_PROGRESS_EVENT, emit_now);
             }
 
             let stdout_bytes = stdout_handle.join().unwrap_or_default();
@@ -874,6 +883,59 @@ fn run_vfox_streaming(
         }
     }
     result
+}
+
+/// 进度事件节流间隔。vfox 的下载条每个 `\r` 段都会更新（快速网络下每秒
+/// 几十次），而 percent 几乎逐帧变化——每个事件都 emit 会把 IPC 打爆、
+/// webview 侧 setState 风暴。100ms（≈10fps）肉眼够顺。
+const PROGRESS_EMIT_INTERVAL: Duration = Duration::from_millis(100);
+
+/// 安装进度事件的发射节流器。
+///
+/// 规则：
+/// - **相同 percent+phase 不重发**（重复帧直接丢弃）；
+/// - 不同的 percent/phase 也要距上次发射 ≥ [`PROGRESS_EMIT_INTERVAL`]；
+///   窗口内到达的最新一帧先挂起（覆盖旧挂起），窗口过后或流结束时补发，
+///   保证「最后一个状态」（如 100%、Installing 阶段）不会丢。
+#[derive(Default)]
+struct ProgressThrottle {
+    last_emit_at: Option<Instant>,
+    last_sig: Option<(Option<u8>, String)>,
+    pending: Option<InstallProgress>,
+}
+
+impl ProgressThrottle {
+    /// 记录一条解析出的进度。返回 `Some(..)` 表示**现在**应当 emit
+    /// （emit 动作由调用方执行，便于脱离 AppHandle 单测）。
+    fn push(&mut self, p: InstallProgress) -> Option<InstallProgress> {
+        let sig = (p.percent, p.phase.clone());
+        if self.last_sig.as_ref() == Some(&sig) {
+            return None; // 重复帧：相同 percent+phase，丢弃
+        }
+        let due = self
+            .last_emit_at
+            .map(|t| t.elapsed() >= PROGRESS_EMIT_INTERVAL)
+            .unwrap_or(true);
+        if due {
+            self.last_emit_at = Some(Instant::now());
+            self.last_sig = Some(sig);
+            self.pending = None;
+            Some(p)
+        } else {
+            // 窗口内：挂起最新一帧，等窗口结束或流末尾补发。
+            // 挂起的帧与 last_sig 不同，所以不会被上面的重复帧规则误杀。
+            self.pending = Some(p);
+            None
+        }
+    }
+
+    /// 取出挂起的帧（流结束/窗口过后补发）。返回 `Some(..)` 表示应 emit。
+    fn take_pending(&mut self) -> Option<InstallProgress> {
+        let p = self.pending.take()?;
+        self.last_sig = Some((p.percent, p.phase.clone()));
+        self.last_emit_at = Some(Instant::now());
+        Some(p)
+    }
 }
 
 /// Parse one line of vfox install output into a progress event.
@@ -1562,6 +1624,55 @@ mod tests {
     fn parse_unrecognized_returns_none() {
         assert!(parse_progress("some random log line").is_none());
         assert!(parse_progress("").is_none());
+    }
+
+    fn dl(pct: u8) -> InstallProgress {
+        InstallProgress {
+            percent: Some(pct),
+            speed: Some("1 MB/s".into()),
+            phase: "downloading".to_string(),
+            message: None,
+        }
+    }
+
+    #[test]
+    fn throttle_drops_duplicate_sig() {
+        // 相同 percent+phase 的重复帧：第一次发射，之后全部丢弃。
+        let mut th = ProgressThrottle::default();
+        assert!(th.push(dl(42)).is_some(), "first frame must emit");
+        assert!(th.push(dl(42)).is_none(), "duplicate frame must be dropped");
+        assert!(th.push(dl(42)).is_none());
+    }
+
+    #[test]
+    fn throttle_holds_distinct_sig_within_window() {
+        // 窗口内的新帧不立即发射，而是挂起；流结束时补发最新的那帧。
+        let mut th = ProgressThrottle::default();
+        assert!(th.push(dl(1)).is_some(), "first frame emits immediately");
+        assert!(th.push(dl(2)).is_none(), "within window: held, not emitted");
+        assert!(th.push(dl(3)).is_none(), "newer frame replaces the held one");
+        let flushed = th.take_pending().expect("held frame must flush at end");
+        assert_eq!(flushed.percent, Some(3), "the NEWEST held frame wins");
+        assert!(th.take_pending().is_none(), "flush is one-shot");
+    }
+
+    #[test]
+    fn throttle_emits_after_window_elapses() {
+        // 伪造「上次发射在 200ms 前」：新帧应立即发射而不是挂起。
+        let mut th = ProgressThrottle::default();
+        th.push(dl(1));
+        th.last_emit_at = Instant::now().checked_sub(Duration::from_millis(200));
+        assert!(th.push(dl(2)).is_some(), "window elapsed: emit immediately");
+    }
+
+    #[test]
+    fn throttle_pending_survives_duplicate_push() {
+        // 挂起 3% 后又来一帧与已发射的 1% 相同：重复帧不得清掉挂起的 3%。
+        let mut th = ProgressThrottle::default();
+        th.push(dl(1));
+        th.push(dl(3)); // held
+        assert!(th.push(dl(1)).is_none(), "duplicate of EMITTED frame dropped");
+        assert_eq!(th.take_pending().unwrap().percent, Some(3));
     }
 
     #[test]
