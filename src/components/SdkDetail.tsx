@@ -14,7 +14,10 @@ interface Props {
   history: { sdk: string; version: string; date: string; from: string | null }[];
   searchLoading: boolean;
   versionQuery: string;
+  /** 全局 busy（快照恢复 / 更新 vfox 等）——刷新按钮转圈用。 */
   busy: boolean;
+  /** 本 SDK 的操作是否被锁：全局操作，或 busySdk 正是这个 SDK。 */
+  sdkBusy: boolean;
   error: string | null;
   versionScope: VersionScope;
   projectPath: string | null;
@@ -30,7 +33,7 @@ interface Props {
 
 export default function SdkDetail({
   currentSdk, filteredVersions, diskUsage, history,
-  searchLoading, versionQuery, busy, error,
+  searchLoading, versionQuery, busy, sdkBusy, error,
   versionScope, projectPath,
   onVersionQueryChange, onScopeChange, onPickProject,
   onUse, onInstall, onRemove, onRefresh, onRetry,
@@ -97,7 +100,7 @@ export default function SdkDetail({
                     version={v.version}
                     isCurrent={v.is_current}
                     usage={usage}
-                    busy={busy}
+                    busy={sdkBusy}
                     onUse={() => onUse(v.version)}
                     onRemove={() => onRemove(v.version)}
                   />
@@ -137,7 +140,7 @@ export default function SdkDetail({
                   version={v.version}
                   installed={v.installed}
                   note={v.note}
-                  busy={busy}
+                  busy={sdkBusy}
                   onInstall={() => onInstall(v.version)}
                 />
               ))}

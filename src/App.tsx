@@ -34,6 +34,10 @@ export default function App() {
   const [view, setView] = useState<View>("main");
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
+  // busy 收窄：正在操作的 SDK 名。SDK 级操作（装/卸/切换/插件增删）只锁
+  // 对应 SDK 的按钮，浏览/操作其他 SDK 不受影响；全局操作（快照恢复、
+  // 更新 vfox）busySdk 为 null，仍锁全部。
+  const [busySdk, setBusySdk] = useState<string | null>(null);
   const [busyLabel, setBusyLabel] = useState<string | null>(null);
   const [installProgress, setInstallProgress] = useState<{
     percent: number | null; speed: string | null; phase: string;
@@ -304,7 +308,7 @@ export default function App() {
 
   // ── actions ──
   const handleUse = useCallback(async (sdk: string, version: string) => {
-    setBusy(true); setBusyLabel(t("progress.switching", { version })); setError(null);
+    setBusy(true); setBusySdk(sdk); setBusyLabel(t("progress.switching", { version })); setError(null);
     try {
       // 后端返回值可能带 ⚠️ 警告（如项目 .tool-versions 写入失败），
       // 必须展示；其余情况保持简洁的成功文案
@@ -323,7 +327,7 @@ export default function App() {
       // projectPath 变化才刷新，切完看不到直到重选目录）
       void loadHistory();
     } catch (e) { setError(String(e)); }
-    finally { setBusy(false); setBusyLabel(null); }
+    finally { setBusy(false); setBusySdk(null); setBusyLabel(null); }
   }, [t, versionScope, projectPath, flash, refresh, markAvailable, loadHistory]);
 
   // ── install cancellation ──
@@ -332,7 +336,7 @@ export default function App() {
   const cancelRequestedRef = useRef(false);
 
   const handleInstall = useCallback(async (sdk: string, version: string) => {
-    setBusy(true); setBusyLabel(t("progress.installing", { sdk, version }));
+    setBusy(true); setBusySdk(sdk); setBusyLabel(t("progress.installing", { sdk, version }));
     setInstallProgress({ percent: null, speed: null, phase: "starting" });
     cancelRequestedRef.current = false;
     setError(null);
@@ -347,7 +351,7 @@ export default function App() {
       if (cancelRequestedRef.current) flash(t("toast.installCancelled"));
       else setError(String(e));
     }
-    finally { setBusy(false); setBusyLabel(null); setInstallProgress(null); }
+    finally { setBusy(false); setBusySdk(null); setBusyLabel(null); setInstallProgress(null); }
   }, [t, flash, refresh, markAvailable, loadDiskUsage]);
 
   const handleCancelInstall = useCallback(async () => {
@@ -367,7 +371,7 @@ export default function App() {
       message: t("confirm.uninstallMessage"),
       confirmLabel: t("confirm.uninstallConfirm"), destructive: true,
       pending: async () => {
-        setBusy(true); setBusyLabel(t("progress.uninstalling", { version })); setError(null);
+        setBusy(true); setBusySdk(sdk); setBusyLabel(t("progress.uninstalling", { version })); setError(null);
         try {
           await invoke("remove_version", { sdk, version });
           flash(t("toast.uninstalled", { version }));
@@ -375,20 +379,20 @@ export default function App() {
           markAvailable(version, false);
           loadDiskUsage();
         } catch (e) { setError(String(e)); }
-        finally { setBusy(false); setBusyLabel(null); }
+        finally { setBusy(false); setBusySdk(null); setBusyLabel(null); }
       },
     });
   }, [t, flash, refresh, markAvailable, loadDiskUsage]);
 
   const handleAddPlugin = useCallback(async (name: string) => {
-    setBusy(true); setBusyLabel(t("progress.addingPlugin", { name })); setError(null);
+    setBusy(true); setBusySdk(name); setBusyLabel(t("progress.addingPlugin", { name })); setError(null);
     try {
       await invoke("add_plugin", { name });
       flash(t("toast.pluginAdded", { name: sdkMeta(name).name }));
       await refresh();
       setSelected(name);
     } catch (e) { setError(String(e)); }
-    finally { setBusy(false); setBusyLabel(null); }
+    finally { setBusy(false); setBusySdk(null); setBusyLabel(null); }
   }, [t, flash, refresh]);
 
   const handleRemovePlugin = useCallback(async (name: string) => {
@@ -398,13 +402,13 @@ export default function App() {
       message: t("confirm.removePluginMessage"),
       confirmLabel: t("confirm.removePluginConfirm"), destructive: true,
       pending: async () => {
-        setBusy(true); setBusyLabel(t("progress.removingPlugin", { name })); setError(null);
+        setBusy(true); setBusySdk(name); setBusyLabel(t("progress.removingPlugin", { name })); setError(null);
         try {
           await invoke("remove_plugin", { name });
           flash(t("toast.pluginRemoved", { name: sdkMeta(name).name }));
           await refresh();
         } catch (e) { setError(String(e)); }
-        finally { setBusy(false); setBusyLabel(null); }
+        finally { setBusy(false); setBusySdk(null); setBusyLabel(null); }
       },
     });
   }, [t, flash, refresh]);
@@ -565,6 +569,7 @@ export default function App() {
             history={history}
             searchLoading={searchLoading} versionQuery={versionQuery}
             busy={busy} error={error}
+            sdkBusy={busySdk === currentSdk.name || (busy && busySdk === null)}
             versionScope={versionScope} projectPath={projectPath}
             onVersionQueryChange={setVersionQuery}
             onScopeChange={setVersionScope}
