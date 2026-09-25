@@ -1,4 +1,4 @@
-import { memo } from "react";
+import { memo, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { AvailableVersion, DiskUsageEntry, Sdk, VersionScope } from "../constants";
 import { sdkMeta, formatBytes } from "../constants";
@@ -6,6 +6,9 @@ import AppleButton from "./AppleButton";
 import ScopeSwitch from "./ScopeSwitch";
 import GroupedList, { Row, SectionLabel, EmptyHint, Tag } from "./GroupedList";
 import ProjectHistory from "./ProjectHistory";
+
+/** 错误横幅默认展示的行数，其余折叠到『展开全部』后面。 */
+const ERROR_PREVIEW_LINES = 3;
 
 interface Props {
   currentSdk: Sdk;
@@ -39,6 +42,15 @@ export default function SdkDetail({
   onUse, onInstall, onRemove, onRefresh, onRetry,
 }: Props) {
   const { t } = useTranslation();
+  // 错误折叠：vfox 失败时的原始 CLI 输出可能有几十上百行，全量 <pre> 会把
+  // 详情页撑爆。默认只显示前 3 行 + 剩余行数提示，可『展开全部』。
+  const [errorExpanded, setErrorExpanded] = useState(false);
+  // 新错误到来时回到折叠态（否则上一次的展开状态会延续到新错误）。
+  useEffect(() => { setErrorExpanded(false); }, [error]);
+  const errorLines = useMemo(
+    () => (error ? error.replace(/\r/g, "").trim().split("\n") : []),
+    [error]
+  );
   return (
     <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
       {/* Header */}
@@ -149,13 +161,38 @@ export default function SdkDetail({
         </section>
       </div>
 
-      {/* Error banner — full width below the two columns */}
+      {/* Error banner — full width below the two columns. Collapsed by
+          default: only the first 3 lines + a "N more lines" hint, with an
+          expand toggle (raw CLI dumps can be 100+ lines and bury the UI). */}
       {error && (
         <div
           className="mx-8 mb-6 px-4 py-3 text-[12px] flex items-start justify-between gap-3 shrink-0"
           style={{ background: "var(--danger-soft)", color: "var(--danger)", borderRadius: "var(--radius-md)", backdropFilter: "blur(10px)" }}
         >
-          <pre className="whitespace-pre-wrap font-mono m-0 flex-1">{error}</pre>
+          <div className="flex-1 min-w-0">
+            <pre className="whitespace-pre-wrap font-mono m-0">
+              {(errorExpanded || errorLines.length <= ERROR_PREVIEW_LINES
+                ? errorLines
+                : errorLines.slice(0, ERROR_PREVIEW_LINES)
+              ).join("\n")}
+            </pre>
+            {errorLines.length > ERROR_PREVIEW_LINES && (
+              <div className="flex items-center gap-2.5 mt-1.5">
+                {!errorExpanded && (
+                  <span style={{ opacity: 0.8 }}>
+                    {t("detail.errorCollapsedHint", { count: errorLines.length - ERROR_PREVIEW_LINES })}
+                  </span>
+                )}
+                <button
+                  onClick={() => setErrorExpanded((v) => !v)}
+                  className="text-[11px] font-medium px-2 py-0.5 rounded-full transition-opacity hover:opacity-80"
+                  style={{ border: "1px solid var(--danger)", background: "transparent" }}
+                >
+                  {errorExpanded ? t("detail.errorCollapse") : t("detail.errorExpand")}
+                </button>
+              </div>
+            )}
+          </div>
           <button
             onClick={onRetry}
             className="shrink-0 text-[12px] font-medium px-2.5 py-1 rounded-full"

@@ -66,7 +66,10 @@
     "currentLabel": "Current",
     "eol": "EOL",
     "preRelease": "预发布",
-    "uninstallCurrentHint": "当前使用中的版本：请先切换到其他版本再卸载"
+    "uninstallCurrentHint": "当前使用中的版本：请先切换到其他版本再卸载",
+    "errorCollapsedHint": "…还有 {{count}} 行",
+    "errorExpand": "展开全部",
+    "errorCollapse": "收起"
   },
   "project": {
     "history": "项目版本历史",

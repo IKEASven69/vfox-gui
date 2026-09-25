@@ -66,7 +66,10 @@
     "currentLabel": "Current",
     "eol": "EOL",
     "preRelease": "Pre-release",
-    "uninstallCurrentHint": "Active version: switch to another version before uninstalling"
+    "uninstallCurrentHint": "Active version: switch to another version before uninstalling",
+    "errorCollapsedHint": "…{{count}} more lines",
+    "errorExpand": "Show all",
+    "errorCollapse": "Collapse"
   },
   "project": {
     "history": "Project Version History",
