@@ -569,6 +569,7 @@ export default function App() {
             <pre className="whitespace-pre-wrap font-mono m-0 flex-1">{error}</pre>
             <button
               onClick={() => setError(null)}
+              aria-label={t("common.close")}
               className="shrink-0 text-[12px] font-medium px-2.5 py-1 rounded-full"
               style={{ background: "var(--danger)", color: "#fff", border: "none" }}
             >

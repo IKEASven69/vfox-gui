@@ -124,6 +124,7 @@ function FooterButton({
     <button
       onClick={onClick}
       title={title}
+      aria-label={title}
       className="w-7 h-7 flex items-center justify-center text-[14px] transition-colors hover:opacity-80"
       style={{
         background: active ? "var(--accent-soft)" : "transparent",
@@ -155,6 +156,16 @@ const SdkSidebarItem = memo(function SdkSidebarItem({
     <div
       onClick={() => installed && onSelect(c.name)}
       onContextMenu={(e) => onContextMenu(e, c.name, !!installed)}
+      // 可访问性：div onClick 对键盘/读屏不可达，补 button 语义与
+      // Enter/Space 触发；未安装插件的行不可选中，移出 tab 序列。
+      role="button"
+      tabIndex={installed ? 0 : -1}
+      onKeyDown={(e) => {
+        if (installed && (e.key === "Enter" || e.key === " ")) {
+          e.preventDefault();
+          onSelect(c.name);
+        }
+      }}
       className="w-full text-left px-2 py-1.5 mb-0.5 flex items-center gap-2.5 relative cursor-pointer glass-row"
       style={{
         background: active ? "var(--glass-active)" : "transparent",

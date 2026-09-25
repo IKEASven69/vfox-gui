@@ -82,6 +82,7 @@ export default function SdkDetail({
           className="shrink-0 w-8 h-8 flex items-center justify-center rounded-full transition-opacity disabled:opacity-30 hover:bg-[var(--hairline)]"
           style={{ color: "var(--text-tertiary)" }}
           title={t("common.refresh")}
+          aria-label={t("common.refresh")}
         >
           <RefreshIcon spinning={busy} />
         </button>
