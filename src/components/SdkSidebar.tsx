@@ -21,7 +21,8 @@ interface Props {
   onSdkQueryChange: (q: string) => void;
   onOpenSettings: () => void;
   onOpenHelp: () => void;
-  onScanInstall: (sdk: string) => void;
+  /** 扫描项目的一键安装：插件未装先装插件，再装检测到的版本（可为 null）。 */
+  onScanInstall: (sdk: string, version: string | null) => void;
   onSnapshotRestored?: () => void;
   onSnapshotBusy?: (b: boolean) => void;
 }
@@ -43,7 +44,7 @@ export default function SdkSidebar({
       }}
     >
       {/* Project scanner */}
-      <ProjectScanner busy={busy} onInstallSdk={onScanInstall} />
+      <ProjectScanner busy={busy} installedMap={installedMap} onInstallSdk={onScanInstall} />
 
       {/* Environment snapshots */}
       <SnapshotPanel busy={busy} selectedSdk={selected} onRestored={onSnapshotRestored} onBusyChange={onSnapshotBusy} />

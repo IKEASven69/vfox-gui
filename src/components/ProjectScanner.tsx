@@ -2,6 +2,7 @@ import { useState, useCallback } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
 import { useTranslation } from "react-i18next";
+import type { Sdk } from "../constants";
 
 interface Detection {
   sdk: string;
@@ -13,11 +14,13 @@ interface Detection {
 
 interface Props {
   busy: boolean;
-  onInstallSdk: (sdk: string) => void;
+  /** 当前已安装插件的 SDK 表——决定按钮是『添加』还是『安装 x.y.z』。 */
+  installedMap: Map<string, Sdk>;
+  onInstallSdk: (sdk: string, version: string | null) => void;
 }
 
 /** Project scanner — pick a directory, detect required SDKs, one-click install. */
-export default function ProjectScanner({ busy, onInstallSdk }: Props) {
+export default function ProjectScanner({ busy, installedMap, onInstallSdk }: Props) {
   const { t } = useTranslation();
   const [detections, setDetections] = useState<Detection[]>([]);
   const [scanning, setScanning] = useState(false);
@@ -48,8 +51,8 @@ export default function ProjectScanner({ busy, onInstallSdk }: Props) {
     }
   }, [t]);
 
-  const handleAdd = useCallback(async (sdk: string) => {
-    await onInstallSdk(sdk);
+  const handleAdd = useCallback(async (sdk: string, version: string | null) => {
+    await onInstallSdk(sdk, version);
     // Mark as added so the button shows "已添加" and can't be re-clicked.
     setAdded((prev) => new Set(prev).add(sdk));
   }, [onInstallSdk]);
@@ -88,7 +91,16 @@ export default function ProjectScanner({ busy, onInstallSdk }: Props) {
             {t("sidebar.detectedCount", { count: detections.length })}
           </p>
           {detections.map((d) => {
-            const isAdded = added.has(d.sdk);
+            const pluginInstalled = installedMap.has(d.sdk);
+            // 检测到的版本是否已装（插件在且版本号在已装列表里）。
+            const versionInstalled = Boolean(
+              pluginInstalled &&
+              d.required_version &&
+              installedMap.get(d.sdk)!.installed.some((v) => v.version === d.required_version)
+            );
+            // 插件已装且没检测到具体版本 → 无事可做，也显示已就绪。
+            const isDone = added.has(d.sdk) || versionInstalled ||
+              (pluginInstalled && !d.required_version);
             return (
               <div
                 key={d.sdk}
@@ -103,21 +115,23 @@ export default function ProjectScanner({ busy, onInstallSdk }: Props) {
                     </span>
                   )}
                 </span>
-                {isAdded ? (
+                {isDone ? (
                   <span
                     className="text-[10px] px-2 py-0.5 rounded-full font-medium shrink-0"
                     style={{ color: "var(--success)" }}
                   >
-                    ✓ {t("sidebar.added")}
+                    ✓ {t("common.installed")}
                   </span>
                 ) : (
                   <button
-                    onClick={() => handleAdd(d.sdk)}
+                    onClick={() => handleAdd(d.sdk, d.required_version)}
                     disabled={busy}
                     className="text-[10px] px-2 py-0.5 rounded-full font-medium shrink-0 disabled:opacity-40"
                     style={{ background: "var(--success)", color: "#fff", backdropFilter: "blur(10px)" }}
                   >
-                    {t("sidebar.addSdk")}
+                    {d.required_version && pluginInstalled
+                      ? t("sidebar.installVersion", { version: d.required_version })
+                      : t("sidebar.addSdk")}
                   </button>
                 )}
               </div>

@@ -31,6 +31,7 @@
     "detectedCount": "{{count}} SDK(s) detected",
     "addSdk": "Add",
     "added": "Added",
+    "installVersion": "Install {{version}}",
     "snapshots": "Snapshots",
     "snapshotPlaceholder": "Snapshot name…",
     "saveCurrentSdk": "Save Current SDK",

@@ -413,6 +413,29 @@ export default function App() {
     });
   }, [t, flash, refresh]);
 
+  // 扫描项目的一键安装：插件未装时先装插件，再装检测到的版本；插件已装
+  // 则直接装版本。与 handleAddPlugin（只装插件）分开，语义不同。
+  const handleScanInstall = useCallback(async (sdk: string, version: string | null) => {
+    const pluginInstalled = installedMap.has(sdk);
+    setBusy(true); setBusySdk(sdk);
+    setBusyLabel(t("progress.addingPlugin", { name: sdk })); setError(null);
+    try {
+      if (!pluginInstalled) {
+        await invoke("add_plugin", { name: sdk });
+        flash(t("toast.pluginAdded", { name: sdkMeta(sdk).name }));
+        await refresh();
+        setSelected(sdk);
+      }
+      if (version) {
+        setBusyLabel(t("progress.installing", { sdk, version }));
+        await invoke("install_version", { sdk, version });
+        flash(t("toast.installed", { version }));
+        await refresh();
+      }
+    } catch (e) { setError(String(e)); }
+    finally { setBusy(false); setBusySdk(null); setBusyLabel(null); }
+  }, [installedMap, t, flash, refresh]);
+
   const handleRefresh = useCallback(async () => {
     setLoading(true); setError(null);
     try {
@@ -517,7 +540,7 @@ export default function App() {
         onSdkQueryChange={setSdkQuery}
         onOpenSettings={() => setView("settings")}
         onOpenHelp={() => setView("help")}
-        onScanInstall={handleAddPlugin}
+        onScanInstall={handleScanInstall}
         onSnapshotRestored={refresh}
         onSnapshotBusy={(b) => {
           // 快照恢复期间置位全局 busy：后端在逐个执行 vfox use，

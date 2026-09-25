@@ -31,6 +31,7 @@
     "detectedCount": "检测到 {{count}} 个 SDK",
     "addSdk": "添加",
     "added": "已添加",
+    "installVersion": "安装 {{version}}",
     "snapshots": "环境快照",
     "snapshotPlaceholder": "快照名称…",
     "saveCurrentSdk": "保存当前 SDK",
