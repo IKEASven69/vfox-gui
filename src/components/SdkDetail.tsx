@@ -19,7 +19,7 @@ interface Props {
   versionQuery: string;
   /** 全局 busy（快照恢复 / 更新 vfox 等）——刷新按钮转圈用。 */
   busy: boolean;
-  /** 本 SDK 的操作是否被锁：全局操作，或 busySdk 正是这个 SDK。 */
+  /** 本 SDK 的操作是否被锁：该 SDK 有进行中的操作计数，或全局操作进行中。 */
   sdkBusy: boolean;
   error: string | null;
   versionScope: VersionScope;

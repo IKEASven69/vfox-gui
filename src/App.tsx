@@ -33,12 +33,66 @@ export default function App() {
   // Which page the main area shows. Selecting an SDK returns to "main".
   const [view, setView] = useState<View>("main");
   const [loading, setLoading] = useState(true);
-  const [busy, setBusy] = useState(false);
-  // busy 收窄：正在操作的 SDK 名。SDK 级操作（装/卸/切换/插件增删）只锁
-  // 对应 SDK 的按钮，浏览/操作其他 SDK 不受影响；全局操作（快照恢复、
-  // 更新 vfox）busySdk 为 null，仍锁全部。
-  const [busySdk, setBusySdk] = useState<string | null>(null);
-  const [busyLabel, setBusyLabel] = useState<string | null>(null);
+  // busy 收窄（并发安全版）：SDK 级操作（装/卸/切换/插件增删）只锁对应
+  // SDK 的按钮，其他 SDK 可浏览可操作；全局操作（快照恢复、更新 vfox）
+  // 锁全部。
+  // - busySdkCounts：每个 SDK 正在进行的操作**计数**。不能用单值 busySdk：
+  //   SDK A 安装中再对 SDK B 发起操作会把 A 覆盖掉，A 的按钮在安装中
+  //   解锁，出现同 SDK 并发 use/install/remove 写 vfox 状态的窗口。
+  // - globalOps：全局操作进行数，>0 时所有 SDK 的按钮都锁。
+  // - busyLabels：进行中操作的标签（opId → 文案），进度条显示最新一条；
+  //   先结束的操作只删自己的标签，不清还在跑的操作的进度条。
+  const [busySdkCounts, setBusySdkCounts] = useState<Map<string, number>>(() => new Map());
+  const [globalOps, setGlobalOps] = useState(0);
+  const [busyLabels, setBusyLabels] = useState<Map<number, string>>(() => new Map());
+  const busyOpSeqRef = useRef(0);
+  const busy = busySdkCounts.size > 0 || globalOps > 0;
+  const busyLabel = useMemo(() => {
+    // Map 保留插入序，取最新登记的一条作为进度条文案。
+    let last: string | null = null;
+    for (const label of busyLabels.values()) last = label;
+    return last;
+  }, [busyLabels]);
+
+  /** 登记一个进行中的操作：SDK 级传 sdk 名，全局操作传 null。返回操作 id。 */
+  const beginOp = useCallback((sdk: string | null, label: string): number => {
+    const id = ++busyOpSeqRef.current;
+    if (sdk) {
+      setBusySdkCounts((prev) => new Map(prev).set(sdk, (prev.get(sdk) ?? 0) + 1));
+    } else {
+      setGlobalOps((n) => n + 1);
+    }
+    setBusyLabels((prev) => new Map(prev).set(id, label));
+    return id;
+  }, []);
+
+  /** 更新一个进行中操作的标签（如扫描安装从「添加插件」切到「安装」）。 */
+  const updateOpLabel = useCallback((id: number, label: string) => {
+    setBusyLabels((prev) => {
+      if (!prev.has(id)) return prev; // 操作已结束，不再更新
+      return new Map(prev).set(id, label);
+    });
+  }, []);
+
+  /** 结束一个进行中的操作（与 beginOp 配对，放在 finally）。 */
+  const endOp = useCallback((id: number, sdk: string | null) => {
+    if (sdk) {
+      setBusySdkCounts((prev) => {
+        const next = new Map(prev);
+        const count = (next.get(sdk) ?? 1) - 1;
+        if (count <= 0) next.delete(sdk);
+        else next.set(sdk, count);
+        return next;
+      });
+    } else {
+      setGlobalOps((n) => Math.max(0, n - 1));
+    }
+    setBusyLabels((prev) => {
+      const next = new Map(prev);
+      next.delete(id);
+      return next;
+    });
+  }, []);
   const [installProgress, setInstallProgress] = useState<{
     percent: number | null; speed: string | null; phase: string;
   } | null>(null);
@@ -141,6 +195,9 @@ export default function App() {
   }, [theme]);
 
   // ── install progress listener ──
+  // 最近一个安装操作对应的 busy 标签 id：进度事件携带的 message
+  // （Preinstalling/Installing…）要更新到该操作的标签上。
+  const installLabelOpRef = useRef<number | null>(null);
   useEffect(() => {
     let unlisten: UnlistenFn | undefined;
     // cancelled guards the race where the component unmounts before the
@@ -151,14 +208,16 @@ export default function App() {
       (e) => {
         const { percent, speed, phase, message } = e.payload;
         setInstallProgress({ percent, speed, phase });
-        if (message) setBusyLabel(message + "…");
+        if (message && installLabelOpRef.current !== null) {
+          updateOpLabel(installLabelOpRef.current, message + "…");
+        }
       }
     ).then((fn) => {
       if (cancelled) fn();
       else unlisten = fn;
     });
     return () => { cancelled = true; unlisten?.(); };
-  }, []);
+  }, [updateOpLabel]);
 
   // ── context menu dismiss ──
   useEffect(() => {
@@ -308,7 +367,8 @@ export default function App() {
 
   // ── actions ──
   const handleUse = useCallback(async (sdk: string, version: string) => {
-    setBusy(true); setBusySdk(sdk); setBusyLabel(t("progress.switching", { version })); setError(null);
+    const op = beginOp(sdk, t("progress.switching", { version }));
+    setError(null);
     try {
       // 后端返回值可能带 ⚠️ 警告（如项目 .tool-versions 写入失败），
       // 必须展示；其余情况保持简洁的成功文案
@@ -327,17 +387,21 @@ export default function App() {
       // projectPath 变化才刷新，切完看不到直到重选目录）
       void loadHistory();
     } catch (e) { setError(String(e)); }
-    finally { setBusy(false); setBusySdk(null); setBusyLabel(null); }
-  }, [t, versionScope, projectPath, flash, refresh, markAvailable, loadHistory]);
+    finally { endOp(op, sdk); }
+  }, [t, versionScope, projectPath, flash, refresh, markAvailable, loadHistory, beginOp, endOp]);
 
   // ── install cancellation ──
   // 用户点了取消后，install_version 会因进程被杀而以错误结束；用这个
   // ref 区分「主动取消」和「真失败」，前者给 toast 不给错误横幅。
   const cancelRequestedRef = useRef(false);
+  // 快照恢复占用的全局操作 id：onSnapshotBusy(true/false) 配对登记/结束，
+  // 防止重复 true 时重复计数导致 busy 永远不清零。
+  const snapshotOpRef = useRef<number | null>(null);
 
   const handleInstall = useCallback(async (sdk: string, version: string) => {
-    setBusy(true); setBusySdk(sdk); setBusyLabel(t("progress.installing", { sdk, version }));
+    const op = beginOp(sdk, t("progress.installing", { sdk, version }));
     setInstallProgress({ percent: null, speed: null, phase: "starting" });
+    installLabelOpRef.current = op;
     cancelRequestedRef.current = false;
     setError(null);
     try {
@@ -350,9 +414,12 @@ export default function App() {
     } catch (e) {
       if (cancelRequestedRef.current) flash(t("toast.installCancelled"));
       else setError(String(e));
+    } finally {
+      setInstallProgress(null);
+      installLabelOpRef.current = null;
+      endOp(op, sdk);
     }
-    finally { setBusy(false); setBusySdk(null); setBusyLabel(null); setInstallProgress(null); }
-  }, [t, flash, refresh, markAvailable, loadDiskUsage]);
+  }, [t, flash, refresh, markAvailable, loadDiskUsage, beginOp, endOp]);
 
   const handleCancelInstall = useCallback(async () => {
     cancelRequestedRef.current = true;
@@ -373,7 +440,8 @@ export default function App() {
       message: t("confirm.uninstallMessage"),
       confirmLabel: t("confirm.uninstallConfirm"), destructive: true,
       pending: async () => {
-        setBusy(true); setBusySdk(sdk); setBusyLabel(t("progress.uninstalling", { version })); setError(null);
+        const op = beginOp(sdk, t("progress.uninstalling", { version }));
+        setError(null);
         try {
           await invoke("remove_version", { sdk, version });
           flash(t("toast.uninstalled", { version }));
@@ -381,21 +449,22 @@ export default function App() {
           markAvailable(version, false);
           loadDiskUsage();
         } catch (e) { setError(String(e)); }
-        finally { setBusy(false); setBusySdk(null); setBusyLabel(null); }
+        finally { endOp(op, sdk); }
       },
     });
-  }, [t, flash, refresh, markAvailable, loadDiskUsage]);
+  }, [t, flash, refresh, markAvailable, loadDiskUsage, beginOp, endOp]);
 
   const handleAddPlugin = useCallback(async (name: string) => {
-    setBusy(true); setBusySdk(name); setBusyLabel(t("progress.addingPlugin", { name })); setError(null);
+    const op = beginOp(name, t("progress.addingPlugin", { name }));
+    setError(null);
     try {
       await invoke("add_plugin", { name });
       flash(t("toast.pluginAdded", { name: sdkMeta(name).name }));
       await refresh();
       setSelected(name);
     } catch (e) { setError(String(e)); }
-    finally { setBusy(false); setBusySdk(null); setBusyLabel(null); }
-  }, [t, flash, refresh]);
+    finally { endOp(op, name); }
+  }, [t, flash, refresh, beginOp, endOp]);
 
   const handleRemovePlugin = useCallback(async (name: string) => {
     setCtxMenu(null);
@@ -404,23 +473,24 @@ export default function App() {
       message: t("confirm.removePluginMessage"),
       confirmLabel: t("confirm.removePluginConfirm"), destructive: true,
       pending: async () => {
-        setBusy(true); setBusySdk(name); setBusyLabel(t("progress.removingPlugin", { name })); setError(null);
+        const op = beginOp(name, t("progress.removingPlugin", { name }));
+        setError(null);
         try {
           await invoke("remove_plugin", { name });
           flash(t("toast.pluginRemoved", { name: sdkMeta(name).name }));
           await refresh();
         } catch (e) { setError(String(e)); }
-        finally { setBusy(false); setBusySdk(null); setBusyLabel(null); }
+        finally { endOp(op, name); }
       },
     });
-  }, [t, flash, refresh]);
+  }, [t, flash, refresh, beginOp, endOp]);
 
   // 扫描项目的一键安装：插件未装时先装插件，再装检测到的版本；插件已装
   // 则直接装版本。与 handleAddPlugin（只装插件）分开，语义不同。
   const handleScanInstall = useCallback(async (sdk: string, version: string | null) => {
     const pluginInstalled = installedMap.has(sdk);
-    setBusy(true); setBusySdk(sdk);
-    setBusyLabel(t("progress.addingPlugin", { name: sdk })); setError(null);
+    const op = beginOp(sdk, t("progress.addingPlugin", { name: sdk }));
+    setError(null);
     try {
       if (!pluginInstalled) {
         await invoke("add_plugin", { name: sdk });
@@ -429,14 +499,16 @@ export default function App() {
         setSelected(sdk);
       }
       if (version) {
-        setBusyLabel(t("progress.installing", { sdk, version }));
+        updateOpLabel(op, t("progress.installing", { sdk, version }));
+        installLabelOpRef.current = op;
         await invoke("install_version", { sdk, version });
         flash(t("toast.installed", { version }));
         await refresh();
+        installLabelOpRef.current = null;
       }
     } catch (e) { setError(String(e)); }
-    finally { setBusy(false); setBusySdk(null); setBusyLabel(null); }
-  }, [installedMap, t, flash, refresh]);
+    finally { endOp(op, sdk); }
+  }, [installedMap, t, flash, refresh, beginOp, updateOpLabel, endOp]);
 
   const handleRefresh = useCallback(async () => {
     setLoading(true); setError(null);
@@ -484,13 +556,15 @@ export default function App() {
   }, []);
 
   const handleVfoxUpdate = useCallback(async () => {
-    setBusy(true); setBusyLabel(t("progress.updatingVfox")); setError(null);
+    // 全局操作（不针对某个 SDK）：登记到 globalOps，锁全部 SDK 的按钮。
+    const op = beginOp(null, t("progress.updatingVfox"));
+    setError(null);
     try {
       flash(await invoke<string>("vfox_update") || t("toast.vfoxUpdated"));
       await refresh();
     } catch (e) { setError(String(e)); }
-    finally { setBusy(false); setBusyLabel(null); }
-  }, [t, flash, refresh]);
+    finally { endOp(op, null); }
+  }, [t, flash, refresh, beginOp, endOp]);
 
   // ── tray action listener (must be after checkForUpdate/handleVfoxUpdate) ──
   useEffect(() => {
@@ -545,10 +619,16 @@ export default function App() {
         onScanInstall={handleScanInstall}
         onSnapshotRestored={refresh}
         onSnapshotBusy={(b) => {
-          // 快照恢复期间置位全局 busy：后端在逐个执行 vfox use，
+          // 快照恢复期间计一次全局操作：后端在逐个执行 vfox use，
           // 此时主区域的安装/切换/卸载必须禁用，防止并发改注册表
-          setBusy(b);
-          setBusyLabel(b ? t("snapshot.restoring") : null);
+          if (b) {
+            if (snapshotOpRef.current === null) {
+              snapshotOpRef.current = beginOp(null, t("snapshot.restoring"));
+            }
+          } else if (snapshotOpRef.current !== null) {
+            endOp(snapshotOpRef.current, null);
+            snapshotOpRef.current = null;
+          }
         }}
       />
 
@@ -595,7 +675,7 @@ export default function App() {
             history={history}
             searchLoading={searchLoading} versionQuery={versionQuery}
             busy={busy} error={error}
-            sdkBusy={busySdk === currentSdk.name || (busy && busySdk === null)}
+            sdkBusy={(busySdkCounts.get(currentSdk.name) ?? 0) > 0 || globalOps > 0}
             versionScope={versionScope} projectPath={projectPath}
             onVersionQueryChange={setVersionQuery}
             onScopeChange={setVersionScope}

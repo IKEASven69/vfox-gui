@@ -29,32 +29,39 @@ static AVAILABLE_CACHE: Mutex<Option<(Instant, Vec<AvailableSdk>)>> = Mutex::new
 /// Frontend event name for streaming install progress.
 pub const INSTALL_PROGRESS_EVENT: &str = "vfox://install-progress";
 
-/// 安装取消槽：记录当前正在安装的 vfox 子进程 PID，供 `cancel_install`
-/// 杀进程用。Arc 包一层是因为 `install_version` 的 spawn_blocking 闭包需要
-/// 'static 生命周期，State 的借用进不去。同一时刻只支持一个安装任务
-/// （GUI 本来就是串行安装），后来的安装会覆盖前面的 PID。
+/// 安装取消槽：记录当前**所有**正在安装的 vfox 子进程 PID，供
+/// `cancel_install` 杀进程用。Arc 包一层是因为 `install_version` 的
+/// spawn_blocking 闭包需要 'static 生命周期，State 的借用进不去。
+/// busy 收窄后允许对不同 SDK 并发安装——单槽只留最后登记的 PID，
+/// 取消时第一个安装就永远杀不到了，所以是集合。
 #[derive(Default)]
-pub struct InstallSlot(std::sync::Arc<Mutex<Option<u32>>>);
+pub struct InstallSlot(std::sync::Arc<Mutex<std::collections::HashSet<u32>>>);
 
 impl InstallSlot {
     /// 克隆内部句柄，供移进后台线程的闭包使用。
-    fn handle(&self) -> std::sync::Arc<Mutex<Option<u32>>> {
+    fn handle(&self) -> std::sync::Arc<Mutex<std::collections::HashSet<u32>>> {
         std::sync::Arc::clone(&self.0)
     }
 }
 
-/// 取消当前安装：按槽里记录的 PID 杀掉整棵进程树（vfox 可能带起
-/// 解压/安装器子进程，`/T` 必须带）。返回是否真的杀了（没有正在
-/// 运行的安装时返回 false，前端据此不做任何提示）。
+/// 取消当前安装：把槽里登记的所有安装进程整棵杀掉（vfox 可能带起
+/// 解压/安装器子进程，`/T` 必须带）。并发安装时一并取消——进度条只有
+/// 一条，取消语义就是「停掉正在跑的安装」。返回是否真的杀了（没有
+/// 正在运行的安装时返回 false，前端据此作废取消意图）。
 #[tauri::command]
 pub fn cancel_install(slot: tauri::State<'_, InstallSlot>) -> Result<bool, String> {
-    let pid = slot
-        .0
-        .lock()
-        .map_err(|_| "安装状态锁中毒".to_string())?
-        .take();
-    let Some(pid) = pid else { return Ok(false) };
-    kill_pid(pid);
+    // 先原子取走全部 PID 再杀：杀的过程中新登记的安装不会被误杀，
+    // 已取走 PID 的安装结束后再 remove 也只是 no-op。
+    let pids = {
+        let mut guard = slot.0.lock().map_err(|_| "安装状态锁中毒".to_string())?;
+        std::mem::take(&mut *guard)
+    };
+    if pids.is_empty() {
+        return Ok(false);
+    }
+    for pid in pids {
+        kill_pid(pid);
+    }
     Ok(true)
 }
 
@@ -753,12 +760,12 @@ fn run_vfox_with_timeout(
 /// channel with the timeout and kill the child if it expires.
 ///
 /// `cancel_slot` 登记子进程 PID（前端 `cancel_install` 据此杀安装）；
-/// 所有退出路径都会清槽，不留陈旧 PID。
+/// 所有退出路径都会移除自己的 PID，不留陈旧条目。
 fn run_vfox_streaming(
     args: &[&str],
     tolerate_shell_err: bool,
     app: &AppHandle,
-    cancel_slot: &std::sync::Arc<Mutex<Option<u32>>>,
+    cancel_slot: &std::sync::Arc<Mutex<std::collections::HashSet<u32>>>,
 ) -> Result<String, String> {
     let mut cmd = spawn_quiet("vfox");
     cmd.args(args)
@@ -773,9 +780,9 @@ fn run_vfox_streaming(
     // Remember the PID so we can kill it from the timeout branch (the Child
     // itself moves into the worker thread).
     let pid = child.id();
-    // 登记到取消槽；后续所有退出路径统一在函数尾部清槽。
+    // 登记到取消槽；后续所有退出路径统一在函数尾部移除自己的 PID。
     if let Ok(mut guard) = cancel_slot.lock() {
-        *guard = Some(pid);
+        guard.insert(pid);
     }
 
     let mut child_moved = child;
@@ -873,14 +880,10 @@ fn run_vfox_streaming(
             Err("vfox 安装超时（10 分钟），可能网络卡住。".to_string())
         }
     };
-    // 无论正常结束、被取消还是超时，退出前都清掉取消槽，避免下一个
-    // 安装开始前 cancel_install 杀到陈旧 PID。
+    // 无论正常结束、被取消还是超时，退出前都从取消槽移除自己，避免
+    // cancel_install 杀到陈旧 PID。PID 已被 cancel_install 取走时是 no-op。
     if let Ok(mut guard) = cancel_slot.lock() {
-        // 只有槽里还是自己时才清——理论上串行安装不会出现别人覆盖，
-        // 但防御一下以防未来支持并发安装。
-        if *guard == Some(pid) {
-            *guard = None;
-        }
+        guard.remove(&pid);
     }
     result
 }
