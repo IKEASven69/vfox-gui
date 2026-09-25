@@ -357,10 +357,12 @@ export default function App() {
   const handleCancelInstall = useCallback(async () => {
     cancelRequestedRef.current = true;
     try {
-      await invoke<boolean>("cancel_install");
+      const killed = await invoke<boolean>("cancel_install");
+      // 没有正在运行的安装（刚好已结束）：取消意图作废，避免把随后到达的
+      // 真实失败误标成「已取消」。
+      if (!killed) cancelRequestedRef.current = false;
     } catch {
-      // 取消动作本身失败（如没有正在运行的安装）——不打断用户，
-      // 安装若仍在进行会按正常流程结束。
+      // 取消动作本身失败——同样作废取消意图，安装按正常流程结束。
       cancelRequestedRef.current = false;
     }
   }, []);
