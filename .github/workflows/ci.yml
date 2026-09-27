@@ -1,0 +1,68 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+# 同分支新推送时取消正在跑的旧 run，省 runner 额度
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    name: ${{ matrix.os }} check
+    strategy:
+      fail-fast: false
+      matrix:
+        # 三平台都要能编译：Windows 专属 API（taskkill / CREATE_NO_WINDOW 等）
+        # 必须有 #[cfg] 防护或平台分支，否则 mac/linux 的 cargo check 直接红。
+        os: [windows-latest, macos-latest, ubuntu-22.04]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v6
+        with:
+          version: 11
+
+      - name: Setup Node
+        uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Rust cache
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri -> target
+
+      # Tauri 在 Linux 上依赖 webkit2gtk/gtk/pkg-config，cargo check 也要这些
+      # 头文件（glib-sys 等的 build script 会跑 pkg-config 探测）。
+      # 依赖清单与官方 Tauri v2 文档一致（release.yml 的 "Install Linux deps"
+      # 步骤用的精简版，这里补全 libxdo/libssl 以便完整 check）。
+      - name: Install Linux deps
+        if: matrix.os == 'ubuntu-22.04'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev build-essential curl wget file libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev
+
+      - name: Install JS deps
+        run: pnpm install --frozen-lockfile
+
+      - name: TypeScript 类型检查
+        run: pnpm exec tsc --noEmit
+
+      # zh/en locale 一致性守卫：一边加 key 另一边漏译、插值占位符漂移
+      # 在 CI 就该失败，而不是等用户看到缺文案
+      - name: Check locale consistency (zh/en)
+        run: node scripts/check-locales.mjs
+
+      - name: cargo check (src-tauri)
+        run: cargo check --manifest-path src-tauri/Cargo.toml
