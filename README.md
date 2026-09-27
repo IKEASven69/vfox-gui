@@ -1,6 +1,7 @@
 # vfox-gui
 
 [![License](https://img.shields.io/github/license/IKEASven69/vfox-gui)](LICENSE)
+[![CI](https://github.com/IKEASven69/vfox-gui/actions/workflows/ci.yml/badge.svg)](https://github.com/IKEASven69/vfox-gui/actions/workflows/ci.yml)
 [![Tauri](https://img.shields.io/badge/Tauri-2.0-ffc131?logo=tauri)](https://tauri.app)
 [![React](https://img.shields.io/badge/React-19-61dafb?logo=react)](https://react.dev)
 
@@ -47,9 +48,10 @@
 | 方式 | 说明 |
 |------|------|
 | 安装包（推荐） | Releases 下载 `*-setup.exe`，双击安装 |
+| macOS | Releases 下载 `*.dmg`，打开后拖入「应用程序」；未签名包首次打开需右键 → 打开 |
 | 便携版 | Releases 下载 `*-portable-x64.zip`，解压双击 `vfox-gui.exe` 即可运行 |
 
-**前提**：已安装 [vfox](https://github.com/version-fox/vfox) 并至少添加了一个插件；Windows 10+（64-bit）。没装 vfox？打开 vfox-gui 后会提示并提供安装链接。
+**前提**：已安装 [vfox](https://github.com/version-fox/vfox) 并至少添加了一个插件；Windows 10+（64-bit）或 macOS。没装 vfox？打开 vfox-gui 后会提示并提供安装链接。
 
 ## 🛠️ 从源码运行
 
