@@ -1,0 +1,37 @@
+# ──────────────────────────────────────────────────────────────────────
+# vfox-gui winget 安装器清单（模板，提交前必填——完整步骤见 docs/PUBLISHING.md）
+#
+# 【提交前必填的占位】
+#   InstallerUrl —— release 资产的**带版本号永久链接**，形如
+#     https://github.com/IKEASven69/vfox-gui/releases/download/v0.4.0/vfox-gui_0.4.0_x64-setup.exe
+#     注意：不能用 releases/latest/download/…（winget 要求每个版本的 URL
+#     固定不变，latest 链接会随发版漂移，审核会打回）。
+#   InstallerSha256 —— 上面文件的 SHA256。发布后本地算：
+#     PowerShell: (Get-FileHash .\vfox-gui_0.4.0_x64-setup.exe -Algorithm SHA256).Hash
+#     bash:       sha256sum vfox-gui_0.4.0_x64-setup.exe
+#     用 wingetcreate 提交时会自动下载并计算，可留占位让它填。
+#
+# 【字段来源说明】
+#   InstallerType: nullsoft —— Tauri v2 的 Windows 安装包（*-setup.exe）是
+#     NSIS；NSIS 原生支持静默安装/卸载开关 /S，winget 不需要额外参数。
+#   Scope: user —— 对应 src-tauri/tauri.conf.json 里
+#     bundle.windows.nsis.installMode = "currentUser"（不写机器注册表，
+#     不需要管理员权限）。
+#   ProductCode / AppsAndFeaturesEntries —— 不手填。NSIS 的卸载注册表项
+#     由 wingetcreate 从安装器/已装机器上自动抓取，手填错了会导致升级
+#     匹配失败（winget 找不到旧版本）。首次提交建议直接：
+#       wingetcreate new <InstallerUrl>
+#     生成后再与本模板对照。
+#   ReleaseDate —— 该版本 Release 的发布日期（YYYY-MM-DD），提交时填。
+# ──────────────────────────────────────────────────────────────────────
+PackageIdentifier: IKEASven69.vfox-gui
+PackageVersion: 0.4.0 # ← 与 src-tauri/tauri.conf.json 的 version 一致
+Installers:
+  - Architecture: x64
+    InstallerType: nullsoft
+    Scope: user
+    InstallerUrl: PLACEHOLDER_INSTALLER_URL
+    InstallerSha256: PLACEHOLDER_SHA256
+    # ReleaseDate: 2026-01-01 # ← 取消注释，填该版本 Release 的实际发布日
+ManifestType: installer
+ManifestVersion: 1.6.0

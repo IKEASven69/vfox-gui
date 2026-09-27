@@ -1,0 +1,17 @@
+# ──────────────────────────────────────────────────────────────────────
+# vfox-gui winget 版本清单（模板，提交前必填——完整步骤见 docs/PUBLISHING.md）
+#
+# 【版本怎么填】PackageVersion 一律以 src-tauri/tauri.conf.json 的
+#   "version" 字段为准（当前 0.4.0），同时等于 release tag 去掉前缀 v。
+#   不要凭记忆或 README 里的旧号填——三处不一致会被 winget 验证拒绝。
+#
+# 提交前要替换的占位：本文件与其余三个清单里的 PackageVersion，
+#   以及 installer 清单里的 InstallerUrl / InstallerSha256。
+#
+# 本文件是「版本清单」（ManifestType: version），只声明版本与默认语言。
+# ──────────────────────────────────────────────────────────────────────
+PackageIdentifier: IKEASven69.vfox-gui
+PackageVersion: 0.4.0 # ← 与 src-tauri/tauri.conf.json 的 version 一致
+DefaultLocale: en-US
+ManifestType: version
+ManifestVersion: 1.6.0

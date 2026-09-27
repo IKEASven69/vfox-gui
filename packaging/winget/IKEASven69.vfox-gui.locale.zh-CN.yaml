@@ -1,0 +1,28 @@
+# vfox-gui winget 中文清单（可选：让中文 Windows 用户在 winget 里看到中文
+# 描述）。提交前替换 PackageVersion，与 src-tauri/tauri.conf.json 的
+# version 一致（见 docs/PUBLISHING.md）。
+PackageIdentifier: IKEASven69.vfox-gui
+PackageVersion: 0.4.0 # ← 与 src-tauri/tauri.conf.json 的 version 一致
+PackageLocale: zh-CN
+Publisher: IKEASven69
+PublisherUrl: https://github.com/IKEASven69
+PublisherSupportUrl: https://github.com/IKEASven69/vfox-gui/issues
+PackageName: vfox-gui
+PackageUrl: https://github.com/IKEASven69/vfox-gui
+Moniker: vfox-gui
+License: MIT
+LicenseUrl: https://github.com/IKEASven69/vfox-gui/blob/main/LICENSE
+ShortDescription: vfox 版本管理器的中英双语桌面图形界面。
+Description: >-
+  vfox-gui 是 vfox 版本管理器的桌面图形界面：实时下载进度安装 SDK、
+  全局或按项目切换版本（写入 .tool-versions）、扫描项目自动识别所需
+  SDK、快照与恢复整套版本组合、清理旧版本磁盘占用——全程不用记一条
+  命令。界面支持中英双语。
+Tags:
+  - vfox
+  - 版本管理
+  - sdk
+  - 开发工具
+ReleaseNotesUrl: https://github.com/IKEASven69/vfox-gui/releases
+ManifestType: locale
+ManifestVersion: 1.6.0
