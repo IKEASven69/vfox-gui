@@ -486,14 +486,14 @@ button, a, input, select {
 
 
 
-/* ── Brand icon mats: 图标本体永远官方原色，垫子只负责对比度 ── */
-.brand-mat { display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; }
-.brand-mat-dark-glyph { background: #f5f5f7; }
-.brand-mat-light-glyph { background: #26262a; }
-.brand-mat-mid-glyph { background: #ebebed; }
-[data-theme="dark"] .brand-mat-dark-glyph { background: #ececee; }
-[data-theme="dark"] .brand-mat-mid-glyph { background: #3a3a3c; }
+/* ── Brand icons: 官方色永远不改，无垫直出（GitHub README 的呈现方式）。
+   仅官方色纯黑/近黑的 8 个 logo（rust/bun/deno/crystal/java/lua/clang/maven，
+   生成文件标 black: true）在暗色主题黑上黑不可见，保留浅色垫子——双主题路径
+   （data-theme + prefers-color-scheme）与旧 brand-mat 写法一致；
+   浅色主题无垫、直出官方黑（透明背景）。 ── */
+.brand-icon { display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; }
+.brand-mat-black-logo { background: transparent; }
+[data-theme="dark"] .brand-mat-black-logo { background: #ececee; }
 @media (prefers-color-scheme: dark) {
-  :root:not([data-theme="light"]):not([data-theme="dark"]) .brand-mat-dark-glyph { background: #ececee; }
-  :root:not([data-theme="light"]):not([data-theme="dark"]) .brand-mat-mid-glyph { background: #3a3a3c; }
+  :root:not([data-theme="light"]):not([data-theme="dark"]) .brand-mat-black-logo { background: #ececee; }
 }

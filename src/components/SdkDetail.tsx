@@ -242,7 +242,7 @@ export default function SdkDetail({
 export function IconBadge({ name, size }: { name: string; size?: "sm" | "lg" }) {
   // 官方品牌图标与侧栏同源（BrandIcon），无官方图的 SDK 回落字母徽章
   if (brandIconFor(name)) {
-    return <BrandIcon name={name} size={size === "lg" ? 48 : 28} />;
+    return <BrandIcon name={name} size={size === "lg" ? 44 : 28} />;
   }
   const m = sdkMeta(name);
   const dim = size === "lg" ? "w-14 h-14 text-[22px]" : "w-8 h-8 text-[13px]";

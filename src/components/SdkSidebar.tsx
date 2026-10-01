@@ -176,7 +176,10 @@ const SdkSidebarItem = memo(function SdkSidebarItem({
       }}
     >
       {brandIconFor(c.name) ? (
-        <BrandIcon name={c.name} size={26} />
+        // 官方图标 18px 直出；外层定高盒子与字母回落徽章同高，行高不跳动
+        <span className="w-6 h-6 flex items-center justify-center shrink-0">
+          <BrandIcon name={c.name} size={18} />
+        </span>
       ) : (
         <span
           className="w-6 h-6 flex items-center justify-center text-[10px] font-bold shrink-0"
