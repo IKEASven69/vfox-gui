@@ -1671,58 +1671,113 @@ fn pkg_dir_for(nm: &Path, package: &str) -> std::path::PathBuf {
     }
 }
 
-/// 扫描 node_modules 顶层全局包（@scope 展开），按体积降序。
-/// npm 自身缺失（node_modules/npm/package.json 不存在）视为树损坏。
-fn scan_node_modules(nm: &Path) -> (Vec<GlobalPackageEntry>, Option<String>) {
-    let mut entries: Vec<GlobalPackageEntry> = Vec::new();
-    let corrupt = (!nm.join("npm").join("package.json").is_file())
-        .then(|| "npm-missing".to_string());
+/// 单遍扫描 nodejs 运行时树的产出：运行时本体字节数、每包字节数、包清单。
+/// 替代旧「dir_size(root) 全树一遍 + 每包 dir_size 各一遍 ≈2.3 遍」的做法。
+struct NodeModulesScan {
+    /// root 下不计入任何包的字节（node.exe、bin shim、散文件、.bin/…）
+    runtime_bytes: u64,
+    /// 所有包字节合计
+    packages_bytes: u64,
+    /// 包清单（按体积降序）
+    packages: Vec<GlobalPackageEntry>,
+    /// npm 缺失 → "npm-missing"（树损坏，前端黄条禁用单包操作）
+    corrupt: Option<String>,
+}
 
-    let mut push_pkg = |dir: &Path, entries: &mut Vec<GlobalPackageEntry>| {
+/// 遍历位置上下文：决定字节归属与子目录语义。
+#[derive(Clone, Copy)]
+enum WalkCtx {
+    /// node_modules 子树之外，或 node_modules 里的散文件/隐藏目录——字节归运行时本体
+    Runtime,
+    /// node_modules 目录本身——直接子目录是包或 @scope 容器
+    NmRoot,
+    /// node_modules/@scope 容器——直接子目录是包
+    NmScope,
+    /// 某个包内部——一切字节计入该包（含其嵌套的 node_modules）
+    Package(usize),
+}
+
+impl NodeModulesScan {
+    /// 进入包目录顶层时顺手解析 package.json（name/version/description/bin）。
+    /// 解析失败回落目录名（@scope 包回落 "@scope/name"），与旧逻辑一致。
+    fn register_package(&mut self, dir: &Path, fallback_name: String) -> usize {
         let manifest_text = std::fs::read_to_string(dir.join("package.json")).unwrap_or_default();
         let manifest: serde_json::Value = serde_json::from_str(&manifest_text).unwrap_or_default();
-        let dir_name = dir
-            .file_name()
-            .and_then(|n| n.to_str())
-            .unwrap_or("")
-            .to_string();
         let name = manifest
             .get("name")
             .and_then(|v| v.as_str())
             .map(str::to_string)
-            .unwrap_or(dir_name);
+            .unwrap_or(fallback_name);
         let bins = bins_from_manifest(&manifest, &name);
-        entries.push(GlobalPackageEntry {
+        self.packages.push(GlobalPackageEntry {
             name,
             version: manifest.get("version").and_then(|v| v.as_str()).map(String::from),
-            bytes: dir_size(dir),
+            bytes: 0,
             description: manifest.get("description").and_then(|v| v.as_str()).map(String::from),
             bins,
         });
-    };
+        self.packages.len() - 1
+    }
+}
 
-    if let Ok(top) = std::fs::read_dir(nm) {
-        for entry in top.filter_map(|e| e.ok()) {
+/// 单遍递归走树：字节按路径前缀实时归属——node_modules/&lt;top&gt; 与
+/// node_modules/@scope/&lt;top&gt; 下的字节计入该包，其余计入运行时本体。
+/// `root == nm` 时直接从 node_modules 层开始（旧 scan_node_modules 的语义：
+/// 只产出包清单，不含运行时本体字节）。
+fn scan_node_tree(root: &Path, nm: &Path) -> NodeModulesScan {
+    let mut scan = NodeModulesScan {
+        runtime_bytes: 0,
+        packages_bytes: 0,
+        packages: Vec::new(),
+        corrupt: (!nm.join("npm").join("package.json").is_file())
+            .then(|| "npm-missing".to_string()),
+    };
+    fn walk(dir: &Path, ctx: WalkCtx, nm: &Path, scan: &mut NodeModulesScan) {
+        let Ok(entries) = std::fs::read_dir(dir) else { return };
+        for entry in entries.filter_map(|e| e.ok()) {
             let path = entry.path();
-            let fname = entry.file_name().to_string_lossy().into_owned();
-            if fname.starts_with('.') || !path.is_dir() {
-                continue; // .bin / .package-lock.json / 散文件
-            }
-            if fname.starts_with('@') {
-                if let Ok(scope) = std::fs::read_dir(&path) {
-                    for sub in scope.filter_map(|e| e.ok()) {
-                        if sub.path().is_dir() {
-                            push_pkg(&sub.path(), &mut entries);
+            // 一次 metadata 同时取类型与大小（穿透符号链接，语义同 dir_size）
+            let Ok(meta) = path.metadata() else { continue };
+            if meta.is_dir() {
+                let next = match ctx {
+                    WalkCtx::Runtime => {
+                        if path == nm { WalkCtx::NmRoot } else { WalkCtx::Runtime }
+                    }
+                    WalkCtx::NmRoot => {
+                        let fname = entry.file_name().to_string_lossy().into_owned();
+                        if fname.starts_with('@') {
+                            WalkCtx::NmScope
+                        } else if fname.starts_with('.') {
+                            // .bin / .package-lock.json 之类：不是包，字节归运行时本体
+                            WalkCtx::Runtime
+                        } else {
+                            WalkCtx::Package(scan.register_package(&path, fname))
                         }
                     }
-                }
+                    WalkCtx::NmScope => {
+                        let sub = entry.file_name().to_string_lossy().into_owned();
+                        let scope = dir
+                            .file_name()
+                            .and_then(|n| n.to_str())
+                            .unwrap_or("")
+                            .to_string();
+                        WalkCtx::Package(scan.register_package(&path, format!("{scope}/{sub}")))
+                    }
+                    WalkCtx::Package(i) => WalkCtx::Package(i),
+                };
+                walk(&path, next, nm, scan);
+            } else if let WalkCtx::Package(i) = ctx {
+                scan.packages[i].bytes += meta.len();
             } else {
-                push_pkg(&path, &mut entries);
+                scan.runtime_bytes += meta.len();
             }
         }
     }
-    entries.sort_by(|a, b| b.bytes.cmp(&a.bytes));
-    (entries, corrupt)
+    let start = if root == nm { WalkCtx::NmRoot } else { WalkCtx::Runtime };
+    walk(root, start, nm, &mut scan);
+    scan.packages.sort_by(|a, b| b.bytes.cmp(&a.bytes));
+    scan.packages_bytes = scan.packages.iter().map(|p| p.bytes).sum();
+    scan
 }
 
 /// nodejs 全局包卸载：优先走该版本自带的 npm（`npm remove -g --prefix`，
@@ -1867,22 +1922,25 @@ pub async fn global_packages(sdk: String, version: String) -> Result<GlobalPacka
         match sdk.as_str() {
             "nodejs" => {
                 let nm = root.join("node_modules");
-                let (mut packages, corrupt) = if nm.is_dir() {
-                    scan_node_modules(&nm)
+                // 单遍走树：运行时本体与每包字节一次产出（不再 dir_size 全树 + 每包各一遍）
+                let scan = if nm.is_dir() {
+                    scan_node_tree(&root, &nm)
                 } else {
-                    (Vec::new(), Some("npm-missing".to_string()))
+                    NodeModulesScan {
+                        runtime_bytes: dir_size(&root),
+                        packages_bytes: 0,
+                        packages: Vec::new(),
+                        corrupt: Some("npm-missing".to_string()),
+                    }
                 };
-                let packages_bytes: u64 = packages.iter().map(|p| p.bytes).sum();
-                let runtime_bytes = dir_size(&root).saturating_sub(packages_bytes);
-                let report = GlobalPackagesReport {
+                Ok(GlobalPackagesReport {
                     sdk,
                     version,
-                    runtime_bytes,
-                    packages_bytes,
-                    packages,
-                    warning: corrupt,
-                };
-                Ok(report)
+                    runtime_bytes: scan.runtime_bytes,
+                    packages_bytes: scan.packages_bytes,
+                    packages: scan.packages,
+                    warning: scan.corrupt,
+                })
             }
             "python" => {
                 let runtime_bytes = dir_size(&root);
@@ -2335,7 +2393,7 @@ mod global_packages_tests {
     }
 
     #[test]
-    fn scan_node_modules_expands_scope_and_flags_corruption() {
+    fn scan_node_tree_expands_scope_and_flags_corruption() {
         let root = std::env::temp_dir().join("vfox_gpkg_scan");
         let _ = std::fs::remove_dir_all(&root);
         let nm = root.join("node_modules");
@@ -2353,13 +2411,14 @@ mod global_packages_tests {
         )
         .unwrap();
 
-        let (entries, corrupt) = scan_node_modules(&nm);
+        // root == nm：旧 scan_node_modules 的语义（只产出包清单，不含运行时本体）
+        let scan = scan_node_tree(&nm, &nm);
         // npm 缺失 → 树损坏
-        assert_eq!(corrupt.as_deref(), Some("npm-missing"));
-        assert_eq!(entries.len(), 2);
-        let scoped = entries.iter().find(|e| e.name == "@scope/pkg").unwrap();
+        assert_eq!(scan.corrupt.as_deref(), Some("npm-missing"));
+        assert_eq!(scan.packages.len(), 2);
+        let scoped = scan.packages.iter().find(|e| e.name == "@scope/pkg").unwrap();
         assert_eq!(scoped.bins, vec!["sc".to_string()]);
-        assert!(entries.iter().all(|e| e.name != ".bin"));
+        assert!(scan.packages.iter().all(|e| e.name != ".bin"));
 
         // npm 在场 → 无损坏告警
         std::fs::create_dir_all(nm.join("npm")).unwrap();
@@ -2368,10 +2427,61 @@ mod global_packages_tests {
             r#"{"name":"npm","version":"10.0.0"}"#,
         )
         .unwrap();
-        let (entries, corrupt) = scan_node_modules(&nm);
-        assert!(corrupt.is_none());
-        assert_eq!(entries.len(), 3);
-        assert!(entries[0].bytes >= entries[entries.len() - 1].bytes, "按体积降序");
+        let scan = scan_node_tree(&nm, &nm);
+        assert!(scan.corrupt.is_none());
+        assert_eq!(scan.packages.len(), 3);
+        assert!(scan.packages[0].bytes >= scan.packages[scan.packages.len() - 1].bytes, "按体积降序");
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn scan_node_tree_single_pass_splits_runtime_and_packages() {
+        let root = std::env::temp_dir().join("vfox_gpkg_singlepass");
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(&root).unwrap();
+        let nm = root.join("node_modules");
+        // 运行时本体：node.exe（node_modules 之外）
+        std::fs::write(root.join("node.exe"), vec![0u8; 100]).unwrap();
+        let npm_manifest = r#"{"name":"npm","version":"10.0.0"}"#;
+        // npm：含嵌套 node_modules——深层字节也计入 npm 包本体
+        std::fs::create_dir_all(nm.join("npm").join("lib")).unwrap();
+        std::fs::create_dir_all(nm.join("npm").join("node_modules").join("dep")).unwrap();
+        std::fs::write(nm.join("npm").join("package.json"), npm_manifest).unwrap();
+        std::fs::write(nm.join("npm").join("lib").join("cli.js"), vec![0u8; 40]).unwrap();
+        std::fs::write(nm.join("npm").join("node_modules").join("dep").join("x.js"), vec![0u8; 6]).unwrap();
+        // typescript：description + bin 对象形态
+        let ts_manifest =
+            r#"{"name":"typescript","version":"5.5.0","description":"TS","bin":{"tsc":"bin/tsc","tsserver":"bin/tss"}}"#;
+        std::fs::create_dir_all(nm.join("typescript").join("lib")).unwrap();
+        std::fs::write(nm.join("typescript").join("package.json"), ts_manifest).unwrap();
+        std::fs::write(nm.join("typescript").join("lib").join("tsc.js"), vec![0u8; 200]).unwrap();
+        // @scope 包
+        let scoped_manifest = r#"{"name":"@scope/pkg","version":"1.0.0"}"#;
+        std::fs::create_dir_all(nm.join("@scope").join("pkg")).unwrap();
+        std::fs::write(nm.join("@scope").join("pkg").join("package.json"), scoped_manifest).unwrap();
+        std::fs::write(nm.join("@scope").join("pkg").join("i.js"), vec![0u8; 30]).unwrap();
+        // 非包字节：.bin、.package-lock.json（隐藏路径归运行时本体）
+        std::fs::create_dir_all(nm.join(".bin")).unwrap();
+        std::fs::write(nm.join(".bin").join("tsc.cmd"), vec![0u8; 4]).unwrap();
+        std::fs::write(nm.join(".package-lock.json"), vec![0u8; 20]).unwrap();
+
+        let scan = scan_node_tree(&root, &nm);
+        assert!(scan.corrupt.is_none());
+        let named = |n: &str| scan.packages.iter().find(|p| p.name == n).unwrap();
+        assert_eq!(scan.packages.len(), 3, "npm/typescript/@scope/pkg，无 .bin");
+        let npm_total = npm_manifest.len() as u64 + 40 + 6;
+        let ts_total = ts_manifest.len() as u64 + 200;
+        let scoped_total = scoped_manifest.len() as u64 + 30;
+        assert_eq!(named("npm").bytes, npm_total, "嵌套 node_modules 与包自身 package.json 计入 npm");
+        assert_eq!(named("typescript").bytes, ts_total);
+        assert_eq!(named("@scope/pkg").bytes, scoped_total);
+        assert_eq!(scan.packages_bytes, npm_total + ts_total + scoped_total);
+        assert_eq!(scan.runtime_bytes, 124, "node.exe 100 + .bin 4 + lock 20");
+        let ts = named("typescript");
+        assert_eq!(ts.bins, vec!["tsc".to_string(), "tsserver".to_string()]);
+        assert_eq!(ts.description.as_deref(), Some("TS"));
+        assert_eq!(ts.version.as_deref(), Some("5.5.0"));
+        assert_eq!(scan.packages[0].name, "typescript", "按体积降序");
         let _ = std::fs::remove_dir_all(&root);
     }
 }
