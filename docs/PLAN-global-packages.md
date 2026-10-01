@@ -44,9 +44,9 @@ global_uninstall(sdk, version, packages, dry_run) -> UninstallResult
 
 ## 里程碑(每步独立可发)
 
-- **M1 只读展示**(零风险先上):`global_packages` 命令 + SdkDetail 子面板 + 体积拆分汇总。验收:对 24.18 能列出 @opencode 395M/@deepseek-ai 272M…;24.21 显示空态;活跃/非活跃版本路径都正确。
-- **M2 卸载**:python 先行(pip 语义最简单);nodejs 走 `npm remove -g --prefix`;dry-run 预览 + 确认 + 禁卸名单。验收:卸一个测试包后体积与列表刷新;卸 dsh 前出现红色警告。
-- **M3 打磨**:损坏树降级、批量操作进度、其他运行时(gem/cargo 按同一接口扩展)、可选"全局包体积趋势"。
+- **M1 只读展示**(零风险先上)——✅ 2026-10-01 落地:`global_packages` 命令 + SdkDetail 子面板 + 体积拆分汇总。验收:对 24.18 能列出 @opencode 395M/@deepseek-ai 272M…;24.21 显示空态;活跃/非活跃版本路径都正确。
+- **M2 卸载**——✅ 2026-10-01 落地(nodejs/python 同批;npm 损坏自动降级直删包目录+bin shim,夹具集成测试覆盖):python 先行(pip 语义最简单);nodejs 走 `npm remove -g --prefix`;dry-run 预览 + 确认 + 禁卸名单。验收:卸一个测试包后体积与列表刷新;卸 dsh 前出现红色警告。
+- **M3 打磨**(待做)——本机 24.18 树损坏黄条已在验收截图实锤,损坏检测路线正确:损坏树降级、批量操作进度、其他运行时(gem/cargo 按同一接口扩展)、可选"全局包体积趋势"。
 
 ## 涉及文件
 
