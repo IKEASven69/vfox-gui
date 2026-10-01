@@ -102,7 +102,8 @@
     "gpImportConfirmBins": "Commands that will appear: {{bins}}",
     "gpImportConfirmNative": "Contains native modules that may not work across node versions (prefer reinstalling with npm in the new version): {{names}}",
     "gpImportDone": "Migrated {{count}} packages",
-    "gpImportFailed": "{{count}} failed to migrate: {{first}}"
+    "gpImportFailed": "{{count}} failed to migrate: {{first}}",
+    "uninstallChecking": "Counting…"
   },
   "project": {
     "history": "Project Version History",
@@ -148,7 +149,10 @@
     "removePluginTitle": "Remove {{name}} Plugin",
     "removePluginMessage": "Remove this SDK plugin? Installed versions will remain on disk.",
     "removePluginConfirm": "Remove",
-    "restoreSnapshotMessage": "This will restore SDK versions to the snapshot state."
+    "restoreSnapshotMessage": "This will restore SDK versions to the snapshot state.",
+    "uninstallWithGlobals": "This version has {{count}} global packages ({{bytes}}) that will be deleted along with it. Largest: {{top}}",
+    "uninstallGlobalsNoTop": "(no size details)",
+    "checkGlobals": "Review / Migrate first"
   },
   "contextMenu": {
     "viewDetails": "View Details",

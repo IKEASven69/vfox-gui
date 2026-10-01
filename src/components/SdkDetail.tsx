@@ -36,6 +36,11 @@ interface Props {
   onRetry: () => void;
   /** 全局包卸载成功后刷新磁盘占用（App.loadDiskUsage）。 */
   onBytesChanged: () => void;
+  /** 卸载前的全局包统计正在该版本上进行（按钮 loading 态） */
+  removeCheckingVersion: string | null;
+  /** 「先去看看/迁移」：App 侧请求展开某版本的全局包面板 */
+  gpOpenRequest: { sdk: string; version: string; seq: number } | null;
+  onGpOpenConsumed: () => void;
 }
 
 /** 支持全局包面板的生态（与 Rust 侧 global_packages 的分派一致）。 */
@@ -47,11 +52,19 @@ export default function SdkDetail({
   versionScope, projectPath,
   onVersionQueryChange, onScopeChange, onPickProject,
   onUse, onInstall, onRemove, onRefresh, onRetry, onBytesChanged,
+  removeCheckingVersion, gpOpenRequest, onGpOpenConsumed,
 }: Props) {
   const { t } = useTranslation();
   // 展开全局包面板的版本（同一时刻最多一个）
   const [gpOpen, setGpOpen] = useState<string | null>(null);
   useEffect(() => { setGpOpen(null); }, [currentSdk.name]);
+  // 卸载确认框的「先去看看/迁移」→ 展开该版本的全局包面板
+  useEffect(() => {
+    if (gpOpenRequest && gpOpenRequest.sdk === currentSdk.name) {
+      setGpOpen(gpOpenRequest.version);
+      onGpOpenConsumed();
+    }
+  }, [gpOpenRequest, currentSdk.name, onGpOpenConsumed]);
   // 错误折叠：vfox 失败时的原始 CLI 输出可能有几十上百行，全量 <pre> 会把
   // 详情页撑爆。默认只显示前 3 行 + 剩余行数提示，可『展开全部』。
   const [errorExpanded, setErrorExpanded] = useState(false);
@@ -130,6 +143,7 @@ export default function SdkDetail({
                       onToggleGlobals={() => setGpOpen(gpOpen === v.version ? null : v.version)}
                       onUse={() => onUse(v.version)}
                       onRemove={() => onRemove(v.version)}
+                      removeChecking={removeCheckingVersion === v.version}
                     />
                     {gpOpen === v.version && (
                       <GlobalPackagesPanel
@@ -267,7 +281,7 @@ export function IconBadge({ name, size }: { name: string; size?: "sm" | "lg" }) 
 
 const VersionRow = memo(function VersionRow({
   version, isCurrent, usage, busy, gpSupported, gpOpen, onToggleGlobals,
-  onUse, onRemove,
+  onUse, onRemove, removeChecking,
 }: {
   version: string; isCurrent: boolean;
   usage: DiskUsageEntry | undefined;
@@ -276,6 +290,8 @@ const VersionRow = memo(function VersionRow({
   gpSupported: boolean;
   gpOpen: boolean; onToggleGlobals: () => void;
   onUse: () => void; onRemove: () => void;
+  /** 卸载前的全局包统计进行中（summary 走树可能数秒） */
+  removeChecking?: boolean;
 }) {
   const { t } = useTranslation();
   return (
@@ -312,14 +328,17 @@ const VersionRow = memo(function VersionRow({
             <AppleButton variant="primary" disabled={busy} onClick={onUse}>{t("detail.switch")}</AppleButton>
           )}
           {/* 当前使用中的版本禁止卸载：卸载 active 版本会留下悬空 symlink
-              和指向已删目录的 PATH，shell 里直接报错 */}
+              和指向已删目录的 PATH，shell 里直接报错。统计全局包期间置 loading。 */}
           <AppleButton
             variant="ghost"
-            disabled={busy || isCurrent}
+            disabled={busy || isCurrent || removeChecking}
             onClick={onRemove}
-            title={isCurrent ? t("detail.uninstallCurrentHint") : undefined}
+            title={
+              removeChecking ? t("detail.uninstallChecking")
+              : isCurrent ? t("detail.uninstallCurrentHint") : undefined
+            }
           >
-            {t("detail.uninstall")}
+            {removeChecking ? t("detail.uninstallChecking") : t("detail.uninstall")}
           </AppleButton>
         </div>
       </div>

@@ -162,3 +162,12 @@ export interface GlobalMigrateOutcome {
   /** 含 .node 原生模块的包（跨 node 版本可能不兼容） */
   nativeModules: string[];
 }
+
+/** 卸载版本前的全局包速览。python 侧 pip 不提供每包体积：bytes/top 为空、
+ *  仅 count 有值（前端按 bytes>0 决定是否展示体积括注）。 */
+export interface GlobalPackagesSummary {
+  count: number;
+  bytes: number;
+  /** 体积前 5（包名, 字节） */
+  top: [string, number][];
+}

@@ -9,8 +9,9 @@ import { openUrl } from "@tauri-apps/plugin-opener";
 import type {
   Sdk, AvailableVersion, AvailableSdk,
   DiskUsageEntry, VersionScope, Theme,
+  GlobalPackagesSummary,
 } from "./constants";
-import { sdkMeta } from "./constants";
+import { sdkMeta, formatBytes } from "./constants";
 import SdkSidebar from "./components/SdkSidebar";
 import SdkDetail from "./components/SdkDetail";
 import SettingsPage from "./components/SettingsPage";
@@ -116,7 +117,17 @@ export default function App() {
   const [confirmState, setConfirmState] = useState<{
     title: string; message: string; confirmLabel: string;
     destructive: boolean; pending: () => Promise<void>;
+    /** 非破坏性旁路动作（卸载版本前的「先去看看/迁移」） */
+    extraAction?: { label: string; onAction: () => void };
   } | null>(null);
+
+  // ── 卸载版本前的全局包检查（B2）──
+  // summary 走树可能数秒：对应版本行的卸载按钮先置 loading 态
+  const [removeCheckingVersion, setRemoveCheckingVersion] = useState<string | null>(null);
+  // 「先去看看/迁移」：请求 SdkDetail 展开某版本的全局包面板（seq 防同版本重复点击不触发）
+  const [gpOpenRequest, setGpOpenRequest] = useState<
+    { sdk: string; version: string; seq: number } | null
+  >(null);
 
   // ── context menu ──
   const [ctxMenu, setCtxMenu] = useState<{
@@ -453,10 +464,30 @@ export default function App() {
   }, []);
 
   const handleRemove = useCallback(async (sdk: string, version: string) => {
+    // 先查该版本挂着的全局包（nodejs 走树可能数秒，按钮已置 loading）；
+    // summary 失败不阻塞卸载流——退回原确认文案。
+    setRemoveCheckingVersion(version);
+    let summary: GlobalPackagesSummary | null = null;
+    try {
+      summary = await invoke<GlobalPackagesSummary>("global_packages_summary", { sdk, version });
+    } catch { summary = null; }
+    setRemoveCheckingVersion(null);
+    const hasGp = !!summary && summary.count > 0;
     setConfirmState({
       title: t("confirm.uninstallTitle", { sdk, version }),
-      message: t("confirm.uninstallMessage"),
+      message: hasGp && summary
+        ? t("confirm.uninstallWithGlobals", {
+            count: summary.count,
+            bytes: summary.bytes > 0 ? formatBytes(summary.bytes) : t("detail.gpUnknownSize"),
+            top: summary.top.length > 0
+              ? summary.top.slice(0, 3).map(([n, b]) => `${n} (${formatBytes(b)})`).join(", ")
+              : t("confirm.uninstallGlobalsNoTop"),
+          })
+        : t("confirm.uninstallMessage"),
       confirmLabel: t("confirm.uninstallConfirm"), destructive: true,
+      extraAction: hasGp
+        ? { label: t("confirm.checkGlobals"), onAction: () => setGpOpenRequest({ sdk, version, seq: Date.now() }) }
+        : undefined,
       pending: async () => {
         const op = beginOp(sdk, t("progress.uninstalling", { version }));
         setError(null);
@@ -703,6 +734,9 @@ export default function App() {
             onRefresh={handleRefresh}
             onRetry={() => { setError(null); setLoading(true); refresh(); }}
             onBytesChanged={loadDiskUsage}
+            removeCheckingVersion={removeCheckingVersion}
+            gpOpenRequest={gpOpenRequest}
+            onGpOpenConsumed={() => setGpOpenRequest(null)}
           />
         ) : (
           <div className="flex-1 flex flex-col items-center justify-center gap-2 text-center px-8"

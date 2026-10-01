@@ -102,7 +102,8 @@
     "gpImportConfirmBins": "将出现的命令：{{bins}}",
     "gpImportConfirmNative": "含原生模块，跨 node 版本可能不兼容（建议在新版本用 npm 重装）：{{names}}",
     "gpImportDone": "已迁移 {{count}} 个包",
-    "gpImportFailed": "{{count}} 项迁移失败：{{first}}"
+    "gpImportFailed": "{{count}} 项迁移失败：{{first}}",
+    "uninstallChecking": "统计中…"
   },
   "project": {
     "history": "项目版本历史",
@@ -148,7 +149,10 @@
     "removePluginTitle": "移除 {{name}} 插件",
     "removePluginMessage": "确定要移除这个 SDK 插件吗？已安装的版本会保留在磁盘上。",
     "removePluginConfirm": "移除",
-    "restoreSnapshotMessage": "这会恢复 SDK 版本到快照保存时的状态。"
+    "restoreSnapshotMessage": "这会恢复 SDK 版本到快照保存时的状态。",
+    "uninstallWithGlobals": "该版本挂着 {{count}} 个全局包（{{bytes}}），卸载版本将一并删除。最大：{{top}}",
+    "uninstallGlobalsNoTop": "（无体积明细）",
+    "checkGlobals": "先去看看 / 迁移"
   },
   "contextMenu": {
     "viewDetails": "查看详情",

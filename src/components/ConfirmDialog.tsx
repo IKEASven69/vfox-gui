@@ -2,7 +2,9 @@ import { useEffect } from "react";
 import { useTranslation } from "react-i18next";
 import AppleButton from "./AppleButton";
 
-/** Apple-style confirmation dialog — non-blocking overlay. */
+/** Apple-style confirmation dialog — non-blocking overlay.
+ *  extraAction（可选）：非破坏性旁路动作（如卸载版本前的「先去看看/迁移」），
+ *  点击即关闭确认框并回调，不影响 confirm 主流程。 */
 export default function ConfirmDialog({
   state,
   onClose,
@@ -13,6 +15,7 @@ export default function ConfirmDialog({
     confirmLabel: string;
     destructive: boolean;
     pending: () => Promise<void>;
+    extraAction?: { label: string; onAction: () => void };
   };
     onClose: () => void;
   }) {
@@ -40,7 +43,19 @@ export default function ConfirmDialog({
         <p className="text-[13px] mb-4" style={{ color: "var(--text-secondary)", lineHeight: 1.5 }}>
           {state.message}
         </p>
-        <div className="flex justify-end gap-2">
+        <div className="flex justify-end gap-2 items-center">
+          {state.extraAction && (
+            <button
+              onClick={() => { onClose(); state.extraAction?.onAction(); }}
+              className="mr-auto text-[12px] px-3 py-[5px] font-medium rounded-full"
+              style={{
+                background: "var(--accent-soft)", color: "var(--accent)",
+                border: "none", cursor: "pointer",
+              }}
+            >
+              {state.extraAction.label}
+            </button>
+          )}
           <AppleButton variant="ghost" onClick={onClose}>{t("common.cancel")}</AppleButton>
           <AppleButton
             variant={state.destructive ? "ghost" : "primary"}
