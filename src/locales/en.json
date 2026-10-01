@@ -87,7 +87,22 @@
     "gpConfirmKeyTools": "Contains key tools: {{names}} — dependent toolchains may break",
     "gpConfirmCurrent": "Note: this is the active version; npm -g changes take effect immediately.",
     "gpDone": "Uninstalled {{count}} packages, freed {{bytes}}",
-    "gpFailed": "{{count}} failed: {{first}}"
+    "gpFailed": "{{count}} failed: {{first}}",
+    "gpImportBtn": "Import from another version",
+    "gpImportClose": "Hide import",
+    "gpImportPickSource": "Pick source version…",
+    "gpImportSourceOption": "{{version}} ({{count}} pkgs · {{bytes}})",
+    "gpImportSourceTitle": "Global packages of {{version}} ({{count}}):",
+    "gpImportSourceLoading": "Reading packages of {{version}}…",
+    "gpImportGo": "Migrate ({{count}})",
+    "gpImportConfirmTitle": "Migrate {{count}} packages from {{from}}?",
+    "gpImportConfirmBody": "Packages will be copied from {{from}} into the current version, adding about {{bytes}}. Copy, not move — the source version stays intact and switchable.",
+    "gpImportConfirmPip": "Will be reinstalled via pip: {{list}}",
+    "gpImportConfirmConflict": "Already present in target, will be skipped: {{names}}",
+    "gpImportConfirmBins": "Commands that will appear: {{bins}}",
+    "gpImportConfirmNative": "Contains native modules that may not work across node versions (prefer reinstalling with npm in the new version): {{names}}",
+    "gpImportDone": "Migrated {{count}} packages",
+    "gpImportFailed": "{{count}} failed to migrate: {{first}}"
   },
   "project": {
     "history": "Project Version History",

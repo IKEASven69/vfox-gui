@@ -1603,6 +1603,25 @@ pub struct GlobalUninstallOutcome {
     pub key_tools: Vec<String>,
 }
 
+/// 版本间全局包迁移结果。dry_run 时：migrated 为「将安装清单」（nodejs 为空——
+/// 包数即所选包数；python 为 name==version 行），skippedConflict/failed/
+/// freedHintBytes/keyTools/nativeModules 均按真实执行会发生的情形填充。
+#[derive(Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct GlobalMigrateOutcome {
+    pub dry_run: bool,
+    pub migrated: Vec<String>,
+    /// 目标已存在同名包而跳过（默认不覆盖，可预期）
+    pub skipped_conflict: Vec<String>,
+    pub failed: Vec<(String, String)>,
+    /// nodejs：将新增到目标版本的包字节；python 恒 0（pip 不提供）
+    pub freed_hint_bytes: u64,
+    /// 迁移后将出现的命令（命中 KEY_TOOL_BINS 的）
+    pub key_tools: Vec<String>,
+    /// 包内含 .node 原生模块——跨 node 版本可能不兼容，建议目标版本 npm 重装
+    pub native_modules: Vec<String>,
+}
+
 /// 内置组件禁卸名单：卸掉会废掉运行时自身（sdk → 包名列表）。
 const PROTECTED_PACKAGES: &[(&str, &[&str])] = &[
     ("nodejs", &["npm", "corepack", "npx"]),
@@ -2045,6 +2064,366 @@ pub async fn global_uninstall(
         outcome.key_tools.sort();
         outcome.key_tools.dedup();
         Ok(outcome)
+    })
+    .await
+    .map_err(|e| format!("后台任务失败: {}", e))?
+}
+
+/// 递归复制目录（复制不移动——旧版本保持完整、随时可切回）。符号链接按
+/// 指向内容拷（目录链接着实拷、文件按内容拷），悬空链接跳过。
+fn copy_dir_recursive(src: &Path, dst: &Path) -> std::io::Result<()> {
+    std::fs::create_dir_all(dst)?;
+    for entry in std::fs::read_dir(src)? {
+        let entry = entry?;
+        let to = dst.join(entry.file_name());
+        match entry.path().metadata() {
+            Ok(m) if m.is_dir() => copy_dir_recursive(&entry.path(), &to)?,
+            Ok(_) => {
+                std::fs::copy(entry.path(), &to)?;
+            }
+            Err(_) => {} // 悬空链接等不可达条目
+        }
+    }
+    Ok(())
+}
+
+/// 包目录内是否含 .node 原生模块（迭代走栈，避免深树递归爆栈）。
+fn dir_has_native_module(dir: &Path) -> bool {
+    let mut stack = vec![dir.to_path_buf()];
+    while let Some(d) = stack.pop() {
+        let Ok(entries) = std::fs::read_dir(&d) else { continue };
+        for entry in entries.filter_map(|e| e.ok()) {
+            let p = entry.path();
+            if p.is_dir() {
+                stack.push(p);
+            } else if p.extension().and_then(|e| e.to_str()) == Some("node") {
+                return true;
+            }
+        }
+    }
+    false
+}
+
+/// nodejs 版本间迁移：把 from 的包目录复制进 to 的 node_modules（目标已存在
+/// 同名包 → 跳过记 skippedConflict，默认不覆盖），并复制 bin shim（目标已有
+/// 同名 shim 不覆盖——可能属于别的包）。native/protected/缺包在 dry_run 与
+/// 真实执行中报告一致。
+fn nodejs_migrate(
+    from_root: &Path,
+    to_root: &Path,
+    packages: &[String],
+    dry_run: bool,
+    outcome: &mut GlobalMigrateOutcome,
+) {
+    let from_nm = from_root.join("node_modules");
+    let to_nm = to_root.join("node_modules");
+    for pkg in packages {
+        if let Some(reason) = protected_reason("nodejs", pkg) {
+            outcome.failed.push((pkg.clone(), format!("{reason}（新版本自带，迁移旧的=降级）")));
+            continue;
+        }
+        let src = pkg_dir_for(&from_nm, pkg);
+        if !src.is_dir() {
+            outcome.failed.push((pkg.clone(), "源版本未安装".into()));
+            continue;
+        }
+        let dst = pkg_dir_for(&to_nm, pkg);
+        if dst.exists() {
+            outcome.skipped_conflict.push(pkg.clone());
+            continue;
+        }
+        if dir_has_native_module(&src) {
+            outcome.native_modules.push(pkg.clone());
+        }
+        let manifest: serde_json::Value = serde_json::from_str(
+            &std::fs::read_to_string(src.join("package.json")).unwrap_or_default(),
+        )
+        .unwrap_or_default();
+        let bins = bins_from_manifest(&manifest, pkg);
+        outcome.key_tools.extend(key_tools_in(&bins));
+        outcome.freed_hint_bytes += dir_size(&src);
+        if dry_run {
+            continue;
+        }
+        if let Err(e) = copy_dir_recursive(&src, &dst) {
+            let _ = std::fs::remove_dir_all(&dst); // 半成品不留尸
+            outcome.failed.push((pkg.clone(), format!("复制失败: {e}")));
+            continue;
+        }
+        // bin shim 同步复制到目标运行时根（目标已存在的 shim 不覆盖）
+        for bin in &bins {
+            for (from_shim, to_shim) in bin_shims(from_root, bin)
+                .iter()
+                .zip(bin_shims(to_root, bin).iter())
+            {
+                if from_shim.is_file() && !to_shim.exists() {
+                    if let Some(parent) = to_shim.parent() {
+                        let _ = std::fs::create_dir_all(parent);
+                    }
+                    let _ = std::fs::copy(from_shim, to_shim);
+                }
+            }
+        }
+        outcome.migrated.push(pkg.clone());
+    }
+}
+
+/// python 版本间迁移：旧解释器 `pip freeze` 导出清单（剔除 pip/setuptools/
+/// wheel —— protected 名单），选中包解析成 name==version 行写入临时
+/// requirements 文件，新解释器 `pip install -r`（走网络重装，语义正确——
+/// python 包含版本相关编译产物，目录复制不可靠）。dry_run 只解析出将安装
+/// 的清单填入 migrated，不触碰新环境。
+fn python_migrate(
+    from_root: &Path,
+    to_root: &Path,
+    packages: &[String],
+    dry_run: bool,
+    outcome: &mut GlobalMigrateOutcome,
+) -> Result<(), String> {
+    let from_py = python_exe(from_root);
+    let to_py = python_exe(to_root);
+    if !from_py.is_file() {
+        return Err("源版本解释器不存在".into());
+    }
+    if !to_py.is_file() {
+        return Err("目标版本解释器不存在".into());
+    }
+    let freeze = run_capture(
+        &from_py.to_string_lossy(),
+        &["-m", "pip", "freeze", "--disable-pip-version-check"],
+        Duration::from_secs(120),
+    )?;
+    // name 归一（大小写与 -/_/. 等价）后匹配 freeze 行（仅 name==version 形态；
+    // -e 本地编辑安装与直连 URL 行无法安全复装，忽略）
+    let norm = |s: &str| s.to_ascii_lowercase().replace(['-', '_', '.'], "");
+    let freeze_lines: Vec<(String, String)> = freeze
+        .lines()
+        .filter_map(|l| {
+            let l = l.trim();
+            let eq = l.find("==")?;
+            Some((norm(&l[..eq]), l.to_string()))
+        })
+        .collect();
+    let mut wanted: Vec<String> = Vec::new();
+    for pkg in packages {
+        if let Some(reason) = protected_reason("python", pkg) {
+            outcome.failed.push((pkg.clone(), format!("{reason}（新版本自带，迁移旧的=降级）")));
+            continue;
+        }
+        match freeze_lines.iter().find(|(n, _)| *n == norm(pkg)) {
+            Some((_, line)) => wanted.push(line.clone()),
+            None => outcome.failed.push((pkg.clone(), "旧环境无该包记录".into())),
+        }
+    }
+    if dry_run {
+        outcome.migrated.extend(wanted);
+        return Ok(());
+    }
+    if wanted.is_empty() {
+        return Ok(());
+    }
+    let req = std::env::temp_dir().join(format!("vfox_migrate_req_{}.txt", std::process::id()));
+    std::fs::write(&req, wanted.join("\n")).map_err(|e| format!("写临时 requirements 失败: {e}"))?;
+    let req_str = req.to_string_lossy().into_owned();
+    let res = run_capture(
+        &to_py.to_string_lossy(),
+        &["-m", "pip", "install", "-r", &req_str, "--disable-pip-version-check"],
+        Duration::from_secs(600),
+    );
+    let _ = std::fs::remove_file(&req);
+    match res {
+        Ok(_) => {
+            for pkg in packages {
+                let rejected = outcome.failed.iter().any(|(f, _)| f == pkg);
+                if !rejected {
+                    outcome.migrated.push(pkg.clone());
+                }
+            }
+        }
+        Err(e) => {
+            for pkg in packages {
+                if !outcome.failed.iter().any(|(f, _)| f == pkg) {
+                    outcome.failed.push((pkg.clone(), e.clone()));
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
+/// 版本间全局包迁移（同步实现，测试直调）。方向固定 旧版本 → 新版本；
+/// dry_run=true 出清单（包数/预计新增体积/将出现的命令/原生模块警告），
+/// 前端确认后 dry_run=false 执行。
+fn global_migrate_sync(
+    sdk: &str,
+    from_version: &str,
+    to_version: &str,
+    packages: &[String],
+    dry_run: bool,
+) -> Result<GlobalMigrateOutcome, String> {
+    if from_version == to_version {
+        return Err("源版本与目标版本相同".into());
+    }
+    let from_root = crate::vfox::runtime_root_for(sdk, from_version)
+        .ok_or_else(|| format!("未找到 {sdk}@{from_version} 的安装目录"))?;
+    let to_root = crate::vfox::runtime_root_for(sdk, to_version)
+        .ok_or_else(|| format!("未找到 {sdk}@{to_version} 的安装目录"))?;
+    let mut outcome = GlobalMigrateOutcome {
+        dry_run,
+        migrated: Vec::new(),
+        skipped_conflict: Vec::new(),
+        failed: Vec::new(),
+        freed_hint_bytes: 0,
+        key_tools: Vec::new(),
+        native_modules: Vec::new(),
+    };
+    match sdk {
+        "nodejs" => nodejs_migrate(&from_root, &to_root, packages, dry_run, &mut outcome),
+        "python" => python_migrate(&from_root, &to_root, packages, dry_run, &mut outcome)?,
+        other => return Err(format!("暂不支持 {other} 生态的全局包迁移")),
+    }
+    outcome.key_tools.sort();
+    outcome.key_tools.dedup();
+    Ok(outcome)
+}
+
+/// 从旧版本迁移全局包到新版本。**必须先 dry_run=true 拿清单再真实执行**。
+/// nodejs 复制包目录 + bin shim（不覆盖既有）；python 走 pip freeze → install -r。
+#[tauri::command]
+pub async fn global_migrate(
+    sdk: String,
+    from_version: String,
+    to_version: String,
+    packages: Vec<String>,
+    dry_run: bool,
+) -> Result<GlobalMigrateOutcome, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        global_migrate_sync(&sdk, &from_version, &to_version, &packages, dry_run)
+    })
+    .await
+    .map_err(|e| format!("后台任务失败: {}", e))?
+}
+
+/// 便宜的每版本全局包计数（迁移源版本选择器用）：nodejs read_dir 顶层
+/// （@scope 展开）；python 数 site-packages 的 .dist-info 目录（免起解释器）。
+#[tauri::command]
+pub async fn global_packages_count(sdk: String, version: String) -> Result<u64, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let root = crate::vfox::runtime_root_for(&sdk, &version)
+            .ok_or_else(|| format!("未找到 {sdk}@{version} 的安装目录"))?;
+        match sdk.as_str() {
+            "nodejs" => {
+                let nm = root.join("node_modules");
+                if !nm.is_dir() {
+                    return Ok(0);
+                }
+                let mut count = 0u64;
+                if let Ok(top) = std::fs::read_dir(&nm) {
+                    for entry in top.filter_map(|e| e.ok()) {
+                        let path = entry.path();
+                        let fname = entry.file_name().to_string_lossy().into_owned();
+                        if fname.starts_with('.') || !path.is_dir() {
+                            continue;
+                        }
+                        if fname.starts_with('@') {
+                            if let Ok(scope) = std::fs::read_dir(&path) {
+                                count += scope
+                                    .filter_map(|e| e.ok())
+                                    .filter(|e| e.path().is_dir())
+                                    .count() as u64;
+                            }
+                        } else {
+                            count += 1;
+                        }
+                    }
+                }
+                Ok(count)
+            }
+            "python" => {
+                let Some(sp) = python_site_packages(&root) else { return Ok(0) };
+                Ok(std::fs::read_dir(&sp)
+                    .map(|it| {
+                        it.filter_map(|e| e.ok())
+                            .filter(|e| {
+                                e.path().is_dir()
+                                    && e.file_name().to_string_lossy().ends_with(".dist-info")
+                            })
+                            .count() as u64
+                    })
+                    .unwrap_or(0))
+            }
+            other => Err(format!("暂不支持 {other} 生态的全局包统计")),
+        }
+    })
+    .await
+    .map_err(|e| format!("后台任务失败: {}", e))?
+}
+
+/// python 的 site-packages 目录（Windows `Lib/site-packages`，unix
+/// `lib/python3.x/site-packages`）。找不到返回 None。
+fn python_site_packages(root: &Path) -> Option<std::path::PathBuf> {
+    let win = root.join("Lib").join("site-packages");
+    if win.is_dir() {
+        return Some(win);
+    }
+    let lib = root.join("lib");
+    if let Ok(entries) = std::fs::read_dir(&lib) {
+        for e in entries.filter_map(|e| e.ok()) {
+            let name = e.file_name().to_string_lossy().into_owned();
+            if name.starts_with("python3") {
+                let cand = e.path().join("site-packages");
+                if cand.is_dir() {
+                    return Some(cand);
+                }
+            }
+        }
+    }
+    None
+}
+
+/// 卸载版本前的全局包速览：包数、总字节、体积前 5。nodejs 复用 A2 的单遍
+/// 走树；python 计数走 pip list（每包体积 pip 不提供 → bytes/top 为空）。
+#[derive(Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct GlobalPackagesSummary {
+    pub count: u64,
+    pub bytes: u64,
+    /// 体积前 5（包名, 字节）
+    pub top: Vec<(String, u64)>,
+}
+
+#[tauri::command]
+pub async fn global_packages_summary(sdk: String, version: String) -> Result<GlobalPackagesSummary, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let empty = || GlobalPackagesSummary { count: 0, bytes: 0, top: Vec::new() };
+        let Some(root) = crate::vfox::runtime_root_for(&sdk, &version) else {
+            return Ok(empty());
+        };
+        match sdk.as_str() {
+            "nodejs" => {
+                let nm = root.join("node_modules");
+                if !nm.is_dir() {
+                    return Ok(empty());
+                }
+                let scan = scan_node_tree(&root, &nm);
+                let top = scan
+                    .packages
+                    .iter()
+                    .take(5)
+                    .map(|p| (p.name.clone(), p.bytes))
+                    .collect();
+                Ok(GlobalPackagesSummary {
+                    count: scan.packages.len() as u64,
+                    bytes: scan.packages_bytes,
+                    top,
+                })
+            }
+            "python" => {
+                let count = python_list_packages(&root).map(|l| l.len() as u64).unwrap_or(0);
+                Ok(GlobalPackagesSummary { count, bytes: 0, top: Vec::new() })
+            }
+            _ => Ok(empty()),
+        }
     })
     .await
     .map_err(|e| format!("后台任务失败: {}", e))?
@@ -2551,6 +2930,143 @@ mod global_uninstall_tests {
         assert!(outcome.removed.is_empty());
         assert_eq!(outcome.failed[0].0, "not-installed");
         assert_eq!(outcome.failed[0].1, "未安装");
+        let _ = fs::remove_dir_all(&root);
+    }
+}
+
+#[cfg(test)]
+mod global_migrate_tests {
+    use super::*;
+    use std::fs;
+
+    /// 搭一对 from/to 运行时根：from 含 foo（bin foo）、native（含 .node）、
+    /// @s/p（bin sp）三包与对应 shim；to 只有空 node_modules。
+    fn migrate_fixture(tag: &str) -> (std::path::PathBuf, std::path::PathBuf) {
+        let id = std::process::id();
+        let from = std::env::temp_dir().join(format!("vfox_mig_from_{tag}_{id}"));
+        let to = std::env::temp_dir().join(format!("vfox_mig_to_{tag}_{id}"));
+        let _ = fs::remove_dir_all(&from);
+        let _ = fs::remove_dir_all(&to);
+        let fnm = from.join("node_modules");
+        fs::create_dir_all(fnm.join("foo")).unwrap();
+        fs::write(
+            fnm.join("foo").join("package.json"),
+            r#"{"name":"foo","version":"1.0.0","bin":{"foo":"x.js"}}"#,
+        )
+        .unwrap();
+        fs::write(fnm.join("foo").join("x.js"), "console.log(1)").unwrap();
+        fs::create_dir_all(fnm.join("native")).unwrap();
+        fs::write(
+            fnm.join("native").join("package.json"),
+            r#"{"name":"native","version":"1.0.0"}"#,
+        )
+        .unwrap();
+        fs::write(fnm.join("native").join("addon.node"), "binary").unwrap();
+        fs::create_dir_all(fnm.join("@s").join("p")).unwrap();
+        fs::write(
+            fnm.join("@s").join("p").join("package.json"),
+            r#"{"name":"@s/p","version":"2.0.0","bin":{"sp":"a.js"}}"#,
+        )
+        .unwrap();
+        // from 根的 shim（Windows 三件套 + unix 裸名都写上，按平台断言存在的）
+        for bin in ["foo", "sp"] {
+            for shim in bin_shims(&from, bin) {
+                fs::create_dir_all(shim.parent().unwrap()).unwrap();
+                fs::write(&shim, "@echo off").unwrap();
+            }
+        }
+        fs::create_dir_all(to.join("node_modules")).unwrap();
+        (from, to)
+    }
+
+    #[test]
+    fn nodejs_migrate_dry_run_then_real_copies_packages_and_shims() {
+        let (from, to) = migrate_fixture("full");
+        let mut outcome = GlobalMigrateOutcome {
+            dry_run: true, migrated: vec![], skipped_conflict: vec![], failed: vec![],
+            freed_hint_bytes: 0, key_tools: vec![], native_modules: vec![],
+        };
+        let pkgs = ["foo".to_string(), "native".to_string(), "@s/p".to_string()];
+        nodejs_migrate(&from, &to, &pkgs, true, &mut outcome);
+        // dry_run：不动盘，但冲突/原生/体积/缺包信息齐全
+        assert!(outcome.migrated.is_empty(), "dry_run 不得真拷");
+        assert!(outcome.skipped_conflict.is_empty());
+        assert_eq!(outcome.native_modules, vec!["native".to_string()], "含 .node 的包要报");
+        assert!(outcome.freed_hint_bytes > 0);
+        assert!(!to.join("node_modules").join("foo").exists(), "dry_run 目标无包目录");
+        assert!(!bin_shims(&to, "foo")[0].exists(), "dry_run 不得拷 shim");
+
+        // 真实执行：包目录、内容与 shim 全部落位
+        let mut outcome = GlobalMigrateOutcome {
+            dry_run: false, migrated: vec![], skipped_conflict: vec![], failed: vec![],
+            freed_hint_bytes: 0, key_tools: vec![], native_modules: vec![],
+        };
+        nodejs_migrate(&from, &to, &pkgs, false, &mut outcome);
+        assert!(outcome.failed.is_empty(), "failed: {:?}", outcome.failed);
+        assert_eq!(outcome.migrated.len(), 3);
+        assert!(to.join("node_modules").join("foo").join("x.js").exists(), "包内容要复制");
+        assert!(to.join("node_modules").join("@s").join("p").join("package.json").exists(), "@scope 包展开落位");
+        assert_eq!(outcome.native_modules, vec!["native".to_string()]);
+        for shim in bin_shims(&to, "foo") {
+            assert!(shim.exists(), "shim 应复制: {}", shim.display());
+        }
+        assert!(bin_shims(&to, "sp").iter().any(|s| s.exists()));
+        // 源版本保持完整可切回
+        assert!(from.join("node_modules").join("foo").join("x.js").exists(), "复制不移动");
+        let _ = fs::remove_dir_all(&from);
+        let _ = fs::remove_dir_all(&to);
+    }
+
+    #[test]
+    fn nodejs_migrate_skips_conflicts_without_overwrite() {
+        let (from, to) = migrate_fixture("conflict");
+        let dst = to.join("node_modules").join("foo");
+        fs::create_dir_all(&dst).unwrap();
+        fs::write(dst.join("marker.txt"), "target-own").unwrap();
+
+        let mut outcome = GlobalMigrateOutcome {
+            dry_run: false, migrated: vec![], skipped_conflict: vec![], failed: vec![],
+            freed_hint_bytes: 0, key_tools: vec![], native_modules: vec![],
+        };
+        nodejs_migrate(&from, &to, &["foo".to_string()], false, &mut outcome);
+        assert_eq!(outcome.skipped_conflict, vec!["foo".to_string()]);
+        assert!(outcome.migrated.is_empty(), "冲突包不得迁移");
+        assert_eq!(
+            fs::read_to_string(dst.join("marker.txt")).unwrap(),
+            "target-own",
+            "默认不覆盖目标既有包"
+        );
+        let _ = fs::remove_dir_all(&from);
+        let _ = fs::remove_dir_all(&to);
+    }
+
+    #[test]
+    fn nodejs_migrate_rejects_protected_and_missing_source() {
+        let (from, to) = migrate_fixture("protected");
+        let mut outcome = GlobalMigrateOutcome {
+            dry_run: false, migrated: vec![], skipped_conflict: vec![], failed: vec![],
+            freed_hint_bytes: 0, key_tools: vec![], native_modules: vec![],
+        };
+        let pkgs = ["npm".to_string(), "nope".to_string()];
+        nodejs_migrate(&from, &to, &pkgs, false, &mut outcome);
+        assert!(outcome.failed.iter().any(|(n, r)| n == "npm" && r.contains("内置组件")),
+            "protected 拒绝迁移: {:?}", outcome.failed);
+        assert!(outcome.failed.iter().any(|(n, r)| n == "nope" && r == "源版本未安装"));
+        assert!(!to.join("node_modules").join("npm").exists(), "npm 不得被搬进目标");
+        assert!(outcome.migrated.is_empty());
+        let _ = fs::remove_dir_all(&from);
+        let _ = fs::remove_dir_all(&to);
+    }
+
+    #[test]
+    fn dir_has_native_module_scans_nested() {
+        let root = std::env::temp_dir().join(format!("vfox_mig_native_{}", std::process::id()));
+        let _ = fs::remove_dir_all(&root);
+        fs::create_dir_all(root.join("deep").join("deeper")).unwrap();
+        fs::write(root.join("deep").join("deeper").join("binding.node"), "b").unwrap();
+        assert!(dir_has_native_module(&root));
+        fs::remove_file(root.join("deep").join("deeper").join("binding.node")).unwrap();
+        assert!(!dir_has_native_module(&root), "无 .node 时返回 false");
         let _ = fs::remove_dir_all(&root);
     }
 }

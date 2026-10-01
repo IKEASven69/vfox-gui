@@ -147,3 +147,18 @@ export interface GlobalUninstallOutcome {
   failed: [string, string][];
   keyTools: string[];
 }
+
+/** 版本间全局包迁移结果。dryRun 时 migrated 是「将迁移清单」——nodejs 为空
+ *  （包数即所选包数），python 为 name==version 行。 */
+export interface GlobalMigrateOutcome {
+  dryRun: boolean;
+  migrated: string[];
+  /** 目标已存在同名包而跳过（默认不覆盖） */
+  skippedConflict: string[];
+  failed: [string, string][];
+  /** nodejs：将新增到目标版本的包字节；python 恒 0 */
+  freedHintBytes: number;
+  keyTools: string[];
+  /** 含 .node 原生模块的包（跨 node 版本可能不兼容） */
+  nativeModules: string[];
+}

@@ -136,6 +136,14 @@ export default function SdkDetail({
                         sdk={currentSdk.name}
                         version={v.version}
                         isCurrent={v.is_current}
+                        otherVersions={currentSdk.installed
+                          .filter((x) => x.version !== v.version)
+                          .map((x) => ({
+                            version: x.version,
+                            bytes: diskUsage.find(
+                              (d) => d.sdk === currentSdk.name && d.version === x.version
+                            )?.bytes,
+                          }))}
                         onBytesChanged={onBytesChanged}
                       />
                     )}

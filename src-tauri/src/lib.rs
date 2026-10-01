@@ -167,6 +167,9 @@ pub fn run() {
             commands::set_app_language,
             commands::global_packages,
             commands::global_uninstall,
+            commands::global_migrate,
+            commands::global_packages_count,
+            commands::global_packages_summary,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

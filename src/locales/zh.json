@@ -87,7 +87,22 @@
     "gpConfirmKeyTools": "包含关键工具：{{names}}——依赖它们的工具链可能受影响",
     "gpConfirmCurrent": "注意：这是当前使用中的版本，npm -g 的改动立即生效。",
     "gpDone": "已卸载 {{count}} 个包，释放 {{bytes}}",
-    "gpFailed": "{{count}} 项失败：{{first}}"
+    "gpFailed": "{{count}} 项失败：{{first}}",
+    "gpImportBtn": "从其他版本导入",
+    "gpImportClose": "收起导入",
+    "gpImportPickSource": "选择源版本…",
+    "gpImportSourceOption": "{{version}}（{{count}} 包 · {{bytes}}）",
+    "gpImportSourceTitle": "{{version}} 的全局包（{{count}}）：",
+    "gpImportSourceLoading": "正在读取 {{version}} 的全局包…",
+    "gpImportGo": "迁移（{{count}}）",
+    "gpImportConfirmTitle": "确认从 {{from}} 迁移 {{count}} 个包？",
+    "gpImportConfirmBody": "将从 {{from}} 复制到当前版本，预计新增 {{bytes}}；复制不移动，旧版本保持完整、随时可切回。",
+    "gpImportConfirmPip": "将通过 pip 重装：{{list}}",
+    "gpImportConfirmConflict": "目标已存在、将跳过：{{names}}",
+    "gpImportConfirmBins": "将出现的命令：{{bins}}",
+    "gpImportConfirmNative": "含原生模块，跨 node 版本可能不兼容（建议在新版本用 npm 重装）：{{names}}",
+    "gpImportDone": "已迁移 {{count}} 个包",
+    "gpImportFailed": "{{count}} 项迁移失败：{{first}}"
   },
   "project": {
     "history": "项目版本历史",
