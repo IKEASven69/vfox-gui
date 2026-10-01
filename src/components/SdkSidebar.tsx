@@ -1,7 +1,7 @@
 import { memo } from "react";
 import { useTranslation } from "react-i18next";
 import type { AvailableSdk, Sdk } from "../constants";
-import { sdkMeta } from "../constants";
+import { sdkMeta, SDK_ICON } from "../constants";
 import ProjectScanner from "./ProjectScanner";
 import SnapshotPanel from "./SnapshotPanel";
 
@@ -178,7 +178,13 @@ const SdkSidebarItem = memo(function SdkSidebarItem({
         className="w-6 h-6 flex items-center justify-center text-[10px] font-bold shrink-0"
         style={{ background: c.meta.bg, color: c.meta.fg, borderRadius: "var(--radius-xs)" }}
       >
-        {c.meta.label}
+        {SDK_ICON[c.name] !== undefined ? (
+          <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor" aria-hidden>
+            <path d={SDK_ICON[c.name]} />
+          </svg>
+        ) : (
+          c.meta.label
+        )}
       </span>
       <span
         className="font-medium text-[13px] flex-1 flex items-center gap-1.5 min-w-0"
