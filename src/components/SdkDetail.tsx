@@ -1,6 +1,7 @@
 import { Fragment, memo, useEffect, useMemo, useState } from "react";
+import { invoke } from "@tauri-apps/api/core";
 import { useTranslation } from "react-i18next";
-import type { AvailableVersion, DiskUsageEntry, Sdk, VersionScope } from "../constants";
+import type { AvailableVersion, DiskUsageEntry, Sdk, ToolVersionEntry, VersionScope } from "../constants";
 import { sdkMeta, formatBytes, compareVersions, latestStableVersion } from "../constants";
 import AppleButton from "./AppleButton";
 import BrandIcon, { brandIconFor } from "./BrandIcon";
@@ -74,6 +75,29 @@ export default function SdkDetail({
   );
   const hasNewer = !!latestVersion &&
     (!maxInstalledStable || compareVersions(latestVersion, maxInstalledStable) > 0);
+  // C2：.tool-versions 漂移检测——项目作用域且选中目录时读取锁定清单，
+  // 与本 SDK 已装版本比对（精确相等或前缀 `x.y.` 视为已满足）
+  const [toolVersions, setToolVersions] = useState<ToolVersionEntry[]>([]);
+  useEffect(() => {
+    if (versionScope !== "project" || !projectPath) {
+      setToolVersions([]);
+      return;
+    }
+    let alive = true;
+    invoke<ToolVersionEntry[]>("read_tool_versions", { projectPath })
+      .then((r) => { if (alive) setToolVersions(r); })
+      .catch(() => { if (alive) setToolVersions([]); });
+    return () => { alive = false; };
+  }, [versionScope, projectPath]);
+  const driftEntries = useMemo(
+    () => toolVersions.filter(
+      (e) => e.sdk === currentSdk.name &&
+        !currentSdk.installed.some(
+          (v) => v.version === e.version || v.version.startsWith(`${e.version}.`),
+        ),
+    ),
+    [toolVersions, currentSdk],
+  );
   // 错误折叠：vfox 失败时的原始 CLI 输出可能有几十上百行，全量 <pre> 会把
   // 详情页撑爆。默认只显示前 3 行 + 剩余行数提示，可『展开全部』。
   const [errorExpanded, setErrorExpanded] = useState(false);
@@ -144,6 +168,25 @@ export default function SdkDetail({
             <ScopeSwitch value={versionScope} onChange={onScopeChange}
               projectPath={projectPath} onPickProject={onPickProject} />
           </div>
+          {/* C2：项目 .tool-versions 锁定了本 SDK 未装的版本 → 黄条一键补齐 */}
+          {versionScope === "project" &&
+            driftEntries.map((e) => (
+              <div
+                key={`${e.sdk}@${e.version}`}
+                className="px-3 py-2 mb-2 rounded-[6px] flex items-center gap-2.5 text-[12px] shrink-0"
+                style={{
+                  background: "var(--warning-soft, rgba(255,180,0,.12))",
+                  color: "var(--warning, #e6a700)",
+                }}
+              >
+                <span className="flex-1 min-w-0 truncate">
+                  ⚠ {t("detail.toolVersionDrift", { sdk: e.sdk, version: e.version })}
+                </span>
+                <AppleButton variant="primary" onClick={() => onInstall(e.version)}>
+                  {t("detail.toolVersionInstall")}
+                </AppleButton>
+              </div>
+            ))}
           {currentSdk.installed.length === 0 ? (
             <EmptyHint>{t("detail.noInstalled")}</EmptyHint>
           ) : (

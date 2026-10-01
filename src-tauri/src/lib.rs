@@ -170,6 +170,7 @@ pub fn run() {
             commands::global_migrate,
             commands::global_packages_count,
             commands::global_packages_summary,
+            commands::read_tool_versions,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -152,6 +152,50 @@ pub async fn use_version(
 ///
 /// 写入必须原子化且读失败必须中止：旧实现 `File::open` 失败时静默拿到空
 /// 列表再截断重写，会把其他 SDK 的条目全部抹掉（杀软/IDE 短暂持锁时触发）。
+/// 解析 .tool-versions（asdf 格式）：每行 `sdk version...` 取第一个版本；
+/// `#` 注释与空行跳过；BOM 容错（与 write_tool_versions 同策略）。
+fn parse_tool_versions(text: &str) -> Vec<ToolVersionEntry> {
+    let mut out = Vec::new();
+    for line in text.lines() {
+        let line = line.strip_prefix('\u{feff}').unwrap_or(line);
+        let trimmed = line.trim();
+        if trimmed.is_empty() || trimmed.starts_with('#') {
+            continue;
+        }
+        let mut it = trimmed.split_whitespace();
+        if let (Some(sdk), Some(version)) = (it.next(), it.next()) {
+            out.push(ToolVersionEntry {
+                sdk: sdk.to_string(),
+                version: version.to_string(),
+            });
+        }
+    }
+    out
+}
+
+#[derive(Debug, serde::Serialize)]
+pub struct ToolVersionEntry {
+    pub sdk: String,
+    pub version: String,
+}
+
+/// 读取项目目录的 .tool-versions 锁定清单（C2 漂移检测的数据源）。
+/// 无文件 / 目录不存在 → 空列表（不是错误——大部分项目没有该文件）。
+#[tauri::command]
+pub async fn read_tool_versions(project_path: String) -> Result<Vec<ToolVersionEntry>, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let path = std::path::Path::new(&project_path).join(".tool-versions");
+        if !path.is_file() {
+            return Ok(Vec::new());
+        }
+        let text = std::fs::read_to_string(&path)
+            .map_err(|e| format!("读取 .tool-versions 失败: {e}"))?;
+        Ok(parse_tool_versions(&text))
+    })
+    .await
+    .map_err(|e| format!("后台任务失败: {}", e))?
+}
+
 fn write_tool_versions(dir: &str, sdk: &str, version: &str) -> Result<(), String> {
     use std::io::{BufRead, Write};
     let path = std::path::Path::new(dir).join(".tool-versions");
@@ -3068,5 +3112,29 @@ mod global_migrate_tests {
         fs::remove_file(root.join("deep").join("deeper").join("binding.node")).unwrap();
         assert!(!dir_has_native_module(&root), "无 .node 时返回 false");
         let _ = fs::remove_dir_all(&root);
+    }
+}
+
+#[cfg(test)]
+mod tool_versions_tests {
+    use super::*;
+
+    #[test]
+    fn parse_tool_versions_skips_comments_blank_and_takes_first_version() {
+        let text = "# asdf 管理的版本锁\nnodejs 20.18.0 22.12.0\n\njava 21.0.10-graal # 行内注释\npython 3.13.12\n";
+        let entries = parse_tool_versions(text);
+        assert_eq!(entries.len(), 3, "注释与空行跳过，行内注释行仍解析");
+        assert_eq!(entries[0].sdk, "nodejs");
+        assert_eq!(entries[0].version, "20.18.0", "多版本行只取第一个");
+        assert_eq!(entries[1].version, "21.0.10-graal");
+        assert_eq!(entries[2].version, "3.13.12");
+    }
+
+    #[test]
+    fn parse_tool_versions_tolerates_bom_and_garbage() {
+        let text = "\u{feff}nodejs 20.18.0\njustsdk\n\t  \n";
+        let entries = parse_tool_versions(text);
+        assert_eq!(entries.len(), 1, "BOM 首行可解析；缺版本/空行跳过");
+        assert_eq!(entries[0].version, "20.18.0");
     }
 }

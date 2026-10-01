@@ -106,7 +106,9 @@
     "gpImportFailed": "{{count}} 项迁移失败：{{first}}",
     "uninstallChecking": "统计中…",
     "newVersionBadge": "有新版 {{version}}",
-    "newVersionHint": "点击安装 {{version}}"
+    "newVersionHint": "点击安装 {{version}}",
+    "toolVersionDrift": "项目需要 {{sdk}}@{{version}}",
+    "toolVersionInstall": "一键安装"
   },
   "project": {
     "history": "项目版本历史",

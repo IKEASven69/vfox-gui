@@ -157,6 +157,12 @@ export function latestStableVersion(versions: { version: string }[]): string | n
   return best;
 }
 
+/** .tool-versions 的一条锁定（asdf 格式，Rust read_tool_versions 返回）。 */
+export interface ToolVersionEntry {
+  sdk: string;
+  version: string;
+}
+
 
 /** 全局包条目（某 SDK 版本里安装的运行时全局包）。bins 是该包提供的命令行
  *  工具名——卸载风险提示的依据。bytes 为 0 表示体积未知（python 侧 pip 不提供）。 */
