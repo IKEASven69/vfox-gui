@@ -134,7 +134,10 @@
     "deleteTitle": "删除快照「{{name}}」？",
     "restoring": "正在恢复快照…",
     "deleteMessage": "删除后无法恢复（不进回收站）。",
-    "deleted": "快照「{{name}}」已删除"
+    "deleted": "快照「{{name}}」已删除",
+    "exportHint": "导出快照副本到…（可分享给队友）",
+    "importHint": "从文件导入快照",
+    "imported": "已导入为「{{name}}」"
   },
   "update": {
     "checking": "正在检查更新…",

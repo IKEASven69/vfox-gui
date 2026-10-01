@@ -173,6 +173,8 @@ pub fn run() {
             commands::read_tool_versions,
             commands::read_vfox_network_config,
             commands::write_vfox_network_config,
+            commands::export_snapshot,
+            commands::import_snapshot,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

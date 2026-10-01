@@ -1498,6 +1498,86 @@ pub async fn delete_snapshot(name: String) -> Result<String, String> {
     .map_err(|e| format!("后台任务失败: {}", e))?
 }
 
+/// 把快照 JSON 复制导出到用户所选路径（复制，不动快照原件）。
+#[tauri::command]
+pub async fn export_snapshot(name: String, dest_path: String) -> Result<String, String> {
+    validate_snapshot_name(&name)?;
+    tauri::async_runtime::spawn_blocking(move || {
+        let src = crate::vfox::vfox_home()
+            .join("snapshots")
+            .join(format!("{}.json", &name));
+        if !src.is_file() {
+            return Err(format!("快照「{}」不存在", name));
+        }
+        if dest_path.trim().is_empty() {
+            return Err("导出路径不能为空".into());
+        }
+        let n = std::fs::copy(&src, &dest_path).map_err(|e| format!("导出失败: {e}"))?;
+        Ok(format!("{}（{n} 字节）", dest_path))
+    })
+    .await
+    .map_err(|e| format!("后台任务失败: {}", e))?
+}
+
+/// 快照文件名净化：非法字符换下划线、截断到 100 字符、空则回落 "imported"。
+fn sanitize_snapshot_name(stem: &str) -> String {
+    const INVALID: &[char] = &['/', '\\', ':', '*', '?', '"', '<', '>', '|'];
+    let cleaned: String = stem
+        .trim()
+        .chars()
+        .map(|c| if INVALID.contains(&c) || c.is_control() { '_' } else { c })
+        .collect();
+    let mut s: String = cleaned.chars().take(100).collect();
+    if s.trim().is_empty() {
+        s = "imported".into();
+    }
+    s
+}
+
+/// 导入实现（快照目录参数化，单测用临时目录直调）。
+fn import_snapshot_impl(snap_dir: &std::path::Path, src_path: &str) -> Result<String, String> {
+    if src_path.trim().is_empty() {
+        return Err("导入路径不能为空".into());
+    }
+    let text = std::fs::read_to_string(src_path).map_err(|e| format!("读取文件失败: {e}"))?;
+    let parsed: Vec<SdkSnapshotEntry> = serde_json::from_str(&text)
+        .map_err(|e| format!("不是有效的快照文件（需要 [{{name, current}}] 数组）: {e}"))?;
+    for entry in &parsed {
+        if entry.name.trim().is_empty() {
+            return Err("快照条目缺少 name 字段".into());
+        }
+    }
+    std::fs::create_dir_all(snap_dir).map_err(|e| format!("创建快照目录失败: {e}"))?;
+    let stem = sanitize_snapshot_name(
+        std::path::Path::new(src_path)
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .unwrap_or(""),
+    );
+    let mut candidate = stem.clone();
+    let mut n = 1;
+    while snap_dir.join(format!("{candidate}.json")).exists() {
+        candidate = format!("{stem}-{n}");
+        n += 1;
+    }
+    std::fs::write(snap_dir.join(format!("{candidate}.json")), &text)
+        .map_err(|e| format!("写入快照失败: {e}"))?;
+    Ok(candidate)
+}
+
+/// 导入快照 JSON：校验结构（数组，每项含字符串 name、current 可空——与
+/// save_snapshot 写出的真实结构一致；字面上叫 sdk/version 的文件本就导不进
+/// 恢复流程，校验对齐真实格式）→ 落入 snapshots 目录，重名自动 -1/-2 后缀。
+/// 返回落盘的快照名（前端据此刷新列表并提示）。
+#[tauri::command]
+pub async fn import_snapshot(src_path: String) -> Result<String, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        import_snapshot_impl(&crate::vfox::vfox_home().join("snapshots"), &src_path)
+    })
+    .await
+    .map_err(|e| format!("后台任务失败: {}", e))?
+}
+
 /// Restore SDK versions from a named snapshot.
 ///
 /// Reads `<name>.json` (the format written by `save_snapshot` — a serialized
@@ -3322,5 +3402,53 @@ mod network_config_tests {
         assert_eq!(yaml_get_field(quoted, "proxy", "url").as_deref(), Some("http://p:1"));
         assert_eq!(yaml_get_field(SAMPLE, "nope", "url"), None);
         assert_eq!(yaml_get_field(SAMPLE, "proxy", "missing"), None);
+    }
+}
+
+#[cfg(test)]
+mod snapshot_share_tests {
+    use super::*;
+    use std::fs;
+    use std::path::PathBuf;
+
+    fn tmp_dir(tag: &str) -> PathBuf {
+        let d = std::env::temp_dir().join(format!("vfox_snap_share_{tag}_{}", std::process::id()));
+        let _ = fs::remove_dir_all(&d);
+        fs::create_dir_all(&d).unwrap();
+        d
+    }
+
+    #[test]
+    fn import_validates_structure_and_dedupes_names() {
+        let snap_dir = tmp_dir("import");
+        let src_dir = tmp_dir("import_src");
+        let src = src_dir.join("team-env.json");
+        // 真实快照结构：[{name, current}]（current 可空/缺省）
+        fs::write(&src, r#"[{"name":"nodejs","current":"24.18.0"},{"name":"python","current":null}]"#).unwrap();
+        let name = import_snapshot_impl(&snap_dir, src.to_str().unwrap()).unwrap();
+        assert_eq!(name, "team-env", "取源文件名为主");
+        assert!(snap_dir.join("team-env.json").is_file());
+
+        // 重名 → -1 后缀
+        let name2 = import_snapshot_impl(&snap_dir, src.to_str().unwrap()).unwrap();
+        assert_eq!(name2, "team-env-1");
+
+        // 非数组 / 缺 name → 拒绝
+        let bad = src_dir.join("bad.json");
+        fs::write(&bad, r#"{"sdk":"nodejs","version":"20"}"#).unwrap();
+        assert!(import_snapshot_impl(&snap_dir, bad.to_str().unwrap()).is_err(), "对象形态拒绝");
+        let noname = src_dir.join("noname.json");
+        fs::write(&noname, r#"[{"current":"1.0"}]"#).unwrap();
+        assert!(import_snapshot_impl(&snap_dir, noname.to_str().unwrap()).is_err(), "缺 name 拒绝");
+        let _ = fs::remove_dir_all(&snap_dir);
+        let _ = fs::remove_dir_all(&src_dir);
+    }
+
+    #[test]
+    fn sanitize_snapshot_name_neutralizes_invalid_chars() {
+        assert_eq!(sanitize_snapshot_name("my env"), "my env");
+        assert_eq!(sanitize_snapshot_name(r"a/b\c:d*e"), "a_b_c_d_e");
+        assert_eq!(sanitize_snapshot_name("   "), "imported");
+        assert_eq!(sanitize_snapshot_name("").len(), "imported".len());
     }
 }

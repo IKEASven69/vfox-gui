@@ -1,5 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
+// 别名导入：组件内有局部 save(scope) 保存函数，避免遮蔽
+import { open as openDialog, save as saveDialog } from "@tauri-apps/plugin-dialog";
 import { useTranslation } from "react-i18next";
 import ConfirmDialog from "./ConfirmDialog";
 
@@ -92,12 +94,56 @@ export default function SnapshotPanel({ busy, selectedSdk, onRestored, onBusyCha
     }
   }, [flash, load, t]);
 
+  // C4：导出——存一个副本到用户所选路径（快照原件不动）
+  const doExport = useCallback(async (n: string) => {
+    try {
+      const dest = await saveDialog({
+        defaultPath: `${n}.json`,
+        filters: [{ name: "JSON", extensions: ["json"] }],
+      });
+      if (!dest) return;
+      flash(await invoke<string>("export_snapshot", { name: n, destPath: dest }));
+    } catch (e) {
+      flash(String(e));
+    }
+  }, [flash]);
+
+  // C4：导入——选外部快照 JSON，校验结构后落进快照目录（重名自动加后缀）
+  const doImport = useCallback(async () => {
+    try {
+      const picked = await openDialog({
+        multiple: false,
+        directory: false,
+        filters: [{ name: "JSON", extensions: ["json"] }],
+      });
+      if (typeof picked !== "string") return;
+      const imported = await invoke<string>("import_snapshot", { srcPath: picked });
+      flash(t("snapshot.imported", { name: imported }));
+      await load();
+    } catch (e) {
+      flash(String(e));
+    }
+  }, [flash, load, t]);
+
   return (
     <div className="px-4 py-3 border-b" style={{ borderColor: "var(--hairline)" }}>
-      <p className="text-[10px] font-semibold uppercase tracking-wider mb-2" style={{ color: "var(--text-tertiary)" }}
-        title={t("snapshot.saveHint")}>
-        {t("snapshot.saveTitle")}
-      </p>
+      <div className="flex items-center justify-between mb-2">
+        <p className="text-[10px] font-semibold uppercase tracking-wider" style={{ color: "var(--text-tertiary)" }}
+          title={t("snapshot.saveHint")}>
+          {t("snapshot.saveTitle")}
+        </p>
+        {/* C4：导入外部快照文件 */}
+        <button
+          onClick={doImport}
+          disabled={busy || saving}
+          className="text-[12px] leading-none px-1.5 py-0.5 rounded-full font-medium disabled:opacity-30 hover:bg-[var(--hairline)] transition-opacity"
+          style={{ color: "var(--accent)" }}
+          title={t("snapshot.importHint")}
+          aria-label={t("snapshot.importHint")}
+        >
+          ⇧
+        </button>
+      </div>
 
       {/* Save form — name on its own row, then two equal-width buttons below.
           Stacked so the narrow sidebar never squeezes buttons unevenly. */}
@@ -161,6 +207,17 @@ export default function SnapshotPanel({ busy, selectedSdk, onRestored, onBusyCha
                 title={t("snapshot.restoreHint")}
               >
                 {t("snapshot.restoreButton")}
+              </button>
+              {/* C4：导出该快照的 JSON 副本 */}
+              <button
+                onClick={() => doExport(s.name)}
+                disabled={busy || saving}
+                className="text-[10px] px-1.5 py-0.5 rounded-full font-medium disabled:opacity-30 opacity-50 hover:opacity-100 transition-opacity"
+                style={{ color: "var(--accent)" }}
+                title={t("snapshot.exportHint")}
+                aria-label={t("snapshot.exportHint")}
+              >
+                ⇓
               </button>
               <button
                 onClick={() => setDeleteConfirm(s.name)}

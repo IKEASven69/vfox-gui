@@ -134,7 +134,10 @@
     "deleteTitle": "Delete snapshot \"{{name}}\"?",
     "restoring": "Restoring snapshot…",
     "deleteMessage": "This cannot be undone (snapshots do not go to the Recycle Bin).",
-    "deleted": "Snapshot \"{{name}}\" deleted"
+    "deleted": "Snapshot \"{{name}}\" deleted",
+    "exportHint": "Export a copy of this snapshot… (shareable)",
+    "importHint": "Import snapshot from file",
+    "imported": "Imported as \"{{name}}\""
   },
   "update": {
     "checking": "Checking for updates…",
