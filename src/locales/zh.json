@@ -43,7 +43,8 @@
     "checkUpdate": "检查更新",
     "settings": "设置",
     "help": "帮助",
-    "noVfox": "未检测到 vfox"
+    "noVfox": "未检测到 vfox",
+    "newVersionDot": "有更新的正式版 {{version}} 可装"
   },
   "detail": {
     "installed": "已安装",
@@ -103,7 +104,9 @@
     "gpImportConfirmNative": "含原生模块，跨 node 版本可能不兼容（建议在新版本用 npm 重装）：{{names}}",
     "gpImportDone": "已迁移 {{count}} 个包",
     "gpImportFailed": "{{count}} 项迁移失败：{{first}}",
-    "uninstallChecking": "统计中…"
+    "uninstallChecking": "统计中…",
+    "newVersionBadge": "有新版 {{version}}",
+    "newVersionHint": "点击安装 {{version}}"
   },
   "project": {
     "history": "项目版本历史",

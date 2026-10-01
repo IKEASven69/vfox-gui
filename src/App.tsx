@@ -11,7 +11,7 @@ import type {
   DiskUsageEntry, VersionScope, Theme,
   GlobalPackagesSummary,
 } from "./constants";
-import { sdkMeta, formatBytes } from "./constants";
+import { sdkMeta, formatBytes, latestStableVersion } from "./constants";
 import SdkSidebar from "./components/SdkSidebar";
 import SdkDetail from "./components/SdkDetail";
 import SettingsPage from "./components/SettingsPage";
@@ -129,6 +129,17 @@ export default function App() {
     { sdk: string; version: string; seq: number } | null
   >(null);
 
+  // ── SDK 新版本提醒（C1）──
+  // 已知最新正式版缓存：侧栏圆点只比对本缓存，不发请求；search_versions
+  // 成功返回时顺带刷新对应 SDK 的条目（网络结果只在详情页拉，正好喂缓存）。
+  const [latestMap, setLatestMap] = useState<Map<string, string>>(new Map());
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem("vfox-latest-cache");
+      if (raw) setLatestMap(new Map(Object.entries(JSON.parse(raw) as Record<string, string>)));
+    } catch { /* 坏缓存忽略 */ }
+  }, []);
+
   // ── context menu ──
   const [ctxMenu, setCtxMenu] = useState<{
     sdk: string; x: number; y: number; installed: boolean;
@@ -196,6 +207,9 @@ export default function App() {
     setSelected(name);
     setView("main");
   }, []);
+
+  // 当前 SDK 的最高正式版（C1 详情页「有新版」徽标）
+  const latestStable = useMemo(() => latestStableVersion(available), [available]);
 
   // ── theme effect ──
   useEffect(() => {
@@ -327,6 +341,20 @@ export default function App() {
       const r = await invoke<AvailableVersion[]>("search_versions", { sdk });
       if (seq !== availableSeqRef.current) return;
       setAvailable(r);
+      // 顺带刷新新版本缓存（内存 + localStorage，供侧栏圆点无请求比对）
+      const latest = latestStableVersion(r);
+      if (latest) {
+        setLatestMap((prev) => {
+          const next = new Map(prev);
+          next.set(sdk, latest);
+          return next;
+        });
+        try {
+          const cache = JSON.parse(localStorage.getItem("vfox-latest-cache") ?? "{}") as Record<string, string>;
+          cache[sdk] = latest;
+          localStorage.setItem("vfox-latest-cache", JSON.stringify(cache));
+        } catch { /* 坏缓存重写即可，忽略读错误 */ }
+      }
     } catch (e) {
       if (seq !== availableSeqRef.current) return;
       setError(t("detail.searchFailed", { error: String(e) }));
@@ -659,6 +687,7 @@ export default function App() {
         installedMap={installedMap} filteredCatalog={filteredCatalog}
         selected={selected} sdkQuery={sdkQuery} busy={busy}
         sdksCount={sdks.length} view={view}
+        latestMap={latestMap}
         onSelect={selectSdk} onAddPlugin={handleAddPlugin}
         onContextMenu={handleSdkContextMenu}
         onSdkQueryChange={setSdkQuery}
@@ -720,6 +749,7 @@ export default function App() {
           <SdkDetail
             currentSdk={currentSdk}
             filteredVersions={filteredVersions} diskUsage={diskUsage}
+            latestVersion={latestStable}
             history={history}
             searchLoading={searchLoading} versionQuery={versionQuery}
             busy={busy} error={error}

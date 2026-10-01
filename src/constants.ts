@@ -115,6 +115,48 @@ export function formatBytes(bytes: number): string {
   return `${(bytes / (1024 * 1024 * 1024)).toFixed(2)} GB`;
 }
 
+/** 版本比较（semver 风格）：按 '.' 分段数值比较；pre-release（含 '-'）
+ *  低于同号正式版；'+build' 元数据忽略；数值段高于字符串段；缺段补 0。 */
+export function compareVersions(a: string, b: string): number {
+  const parse = (v: string) => {
+    const s = v.trim().replace(/^v/i, "");
+    const dash = s.indexOf("-");
+    const core = (dash === -1 ? s : s.slice(0, dash)).split("+")[0];
+    const pre = dash === -1 ? null : s.slice(dash + 1);
+    return {
+      segs: core.split(".").map((x) => (/^\d+$/.test(x) ? Number(x) : x)) as (number | string)[],
+      pre,
+    };
+  };
+  const A = parse(a);
+  const B = parse(b);
+  const n = Math.max(A.segs.length, B.segs.length);
+  for (let i = 0; i < n; i++) {
+    const x = A.segs[i] ?? 0;
+    const y = B.segs[i] ?? 0;
+    let d: number;
+    if (typeof x === "number" && typeof y === "number") d = x - y;
+    else if (typeof x === "string" && typeof y === "string") d = x < y ? -1 : x > y ? 1 : 0;
+    else d = typeof x === "number" ? 1 : -1;
+    if (d !== 0) return d;
+  }
+  if (A.pre === null && B.pre === null) return 0;
+  if (A.pre === null) return 1;
+  if (B.pre === null) return -1;
+  return A.pre < B.pre ? -1 : A.pre > B.pre ? 1 : 0;
+}
+
+/** 列表里的最高正式版（排除 pre-release——版本串含 '-'，如 -rc/-beta/-snapshot；
+ *  graal 等 '-' 后缀的稳定版会被一并排除，属可接受的保守策略）。 */
+export function latestStableVersion(versions: { version: string }[]): string | null {
+  let best: string | null = null;
+  for (const { version } of versions) {
+    if (version.includes("-")) continue;
+    if (best === null || compareVersions(version, best) > 0) best = version;
+  }
+  return best;
+}
+
 
 /** 全局包条目（某 SDK 版本里安装的运行时全局包）。bins 是该包提供的命令行
  *  工具名——卸载风险提示的依据。bytes 为 0 表示体积未知（python 侧 pip 不提供）。 */

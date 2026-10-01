@@ -1,7 +1,7 @@
 import { memo } from "react";
 import { useTranslation } from "react-i18next";
 import type { AvailableSdk, Sdk } from "../constants";
-import { sdkMeta } from "../constants";
+import { sdkMeta, compareVersions, latestStableVersion } from "../constants";
 import BrandIcon, { brandIconFor } from "./BrandIcon";
 import ProjectScanner from "./ProjectScanner";
 import SnapshotPanel from "./SnapshotPanel";
@@ -16,6 +16,8 @@ interface Props {
   busy: boolean;
   sdksCount: number;
   view: "main" | "settings" | "help";
+  /** SDK → 已知最高正式版（localStorage 缓存，侧栏圆点只做缓存比对，不发请求） */
+  latestMap: Map<string, string>;
   onSelect: (name: string) => void;
   onAddPlugin: (name: string) => void;
   onContextMenu: (e: React.MouseEvent, sdk: string, installed: boolean) => void;
@@ -30,7 +32,7 @@ interface Props {
 
 export default function SdkSidebar({
   loading, catalog, installedMap, filteredCatalog, selected,
-  sdkQuery, busy, sdksCount, view,
+  sdkQuery, busy, sdksCount, view, latestMap,
   onSelect, onAddPlugin, onContextMenu,
   onSdkQueryChange, onOpenSettings, onOpenHelp,
   onScanInstall, onSnapshotRestored, onSnapshotBusy,
@@ -83,6 +85,7 @@ export default function SdkSidebar({
               item={c}
               active={selected === c.name}
               installed={installedMap.get(c.name)}
+              latest={latestMap.get(c.name)}
               busy={busy}
               onSelect={onSelect}
               onAddPlugin={onAddPlugin}
@@ -140,12 +143,14 @@ function FooterButton({
 
 /** Single sidebar row — memoised to avoid re-rendering the entire list. */
 const SdkSidebarItem = memo(function SdkSidebarItem({
-  item, active, installed, busy,
+  item, active, installed, latest, busy,
   onSelect, onAddPlugin, onContextMenu,
 }: {
   item: AvailableSdk & { meta: ReturnType<typeof sdkMeta> };
   active: boolean;
   installed: Sdk | undefined;
+  /** 已知最高正式版（来自 localStorage 缓存），无记录时 undefined */
+  latest?: string;
   busy: boolean;
   onSelect: (name: string) => void;
   onAddPlugin: (name: string) => void;
@@ -153,6 +158,10 @@ const SdkSidebarItem = memo(function SdkSidebarItem({
 }) {
   const { t } = useTranslation();
   const c = item;
+  // C1：缓存里的最高正式版比已装最高正式版新 → 行尾挂小圆点
+  const maxInstalledStable = installed ? latestStableVersion(installed.installed) : null;
+  const hasNewer = !!installed && !!latest &&
+    (!maxInstalledStable || compareVersions(latest, maxInstalledStable) > 0);
   return (
     <div
       onClick={() => installed && onSelect(c.name)}
@@ -200,6 +209,13 @@ const SdkSidebarItem = memo(function SdkSidebarItem({
           >
             {t("common.official")}
           </span>
+        )}
+        {hasNewer && latest && (
+          <span
+            className="w-1.5 h-1.5 rounded-full shrink-0"
+            style={{ background: "var(--ember)" }}
+            title={t("sidebar.newVersionDot", { version: latest })}
+          />
         )}
       </span>
       {installed?.current ? (

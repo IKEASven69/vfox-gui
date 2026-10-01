@@ -1,7 +1,7 @@
 import { Fragment, memo, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { AvailableVersion, DiskUsageEntry, Sdk, VersionScope } from "../constants";
-import { sdkMeta, formatBytes } from "../constants";
+import { sdkMeta, formatBytes, compareVersions, latestStableVersion } from "../constants";
 import AppleButton from "./AppleButton";
 import BrandIcon, { brandIconFor } from "./BrandIcon";
 import GlobalPackagesPanel from "./GlobalPackagesPanel";
@@ -15,6 +15,8 @@ const ERROR_PREVIEW_LINES = 3;
 interface Props {
   currentSdk: Sdk;
   filteredVersions: AvailableVersion[];
+  /** 全量可装版本里的最高正式版（App 侧算好；null=搜索未返回/无正式版） */
+  latestVersion?: string | null;
   diskUsage: DiskUsageEntry[];
   history: { sdk: string; version: string; date: string; from: string | null }[];
   searchLoading: boolean;
@@ -47,7 +49,7 @@ interface Props {
 const GLOBAL_PACKAGES_ECOSYSTEMS = new Set(["nodejs", "python"]);
 
 export default function SdkDetail({
-  currentSdk, filteredVersions, diskUsage, history,
+  currentSdk, filteredVersions, latestVersion, diskUsage, history,
   searchLoading, versionQuery, busy, sdkBusy, error,
   versionScope, projectPath,
   onVersionQueryChange, onScopeChange, onPickProject,
@@ -65,6 +67,13 @@ export default function SdkDetail({
       onGpOpenConsumed();
     }
   }, [gpOpenRequest, currentSdk.name, onGpOpenConsumed]);
+  // C1：可装最高正式版比已装最高正式版新 → 头部挂「有新版」徽标
+  const maxInstalledStable = useMemo(
+    () => latestStableVersion(currentSdk.installed),
+    [currentSdk.installed],
+  );
+  const hasNewer = !!latestVersion &&
+    (!maxInstalledStable || compareVersions(latestVersion, maxInstalledStable) > 0);
   // 错误折叠：vfox 失败时的原始 CLI 输出可能有几十上百行，全量 <pre> 会把
   // 详情页撑爆。默认只显示前 3 行 + 剩余行数提示，可『展开全部』。
   const [errorExpanded, setErrorExpanded] = useState(false);
@@ -97,6 +106,19 @@ export default function SdkDetail({
                 </span>
               )}
             </span>
+          )}
+          {hasNewer && latestVersion && (
+            <button
+              onClick={() => onInstall(latestVersion)}
+              className="ml-2 text-[11px] px-2 py-px font-semibold align-middle transition-opacity hover:opacity-80"
+              style={{
+                background: "var(--ember)", color: "#fff",
+                borderRadius: "var(--radius-pill)", border: "none", cursor: "pointer",
+              }}
+              title={t("detail.newVersionHint", { version: latestVersion })}
+            >
+              ↑ {t("detail.newVersionBadge", { version: latestVersion })}
+            </button>
           )}
         </div>
         <button

@@ -43,7 +43,8 @@
     "checkUpdate": "Check Update",
     "settings": "Settings",
     "help": "Help",
-    "noVfox": "vfox not detected"
+    "noVfox": "vfox not detected",
+    "newVersionDot": "Newer stable {{version}} available"
   },
   "detail": {
     "installed": "Installed",
@@ -103,7 +104,9 @@
     "gpImportConfirmNative": "Contains native modules that may not work across node versions (prefer reinstalling with npm in the new version): {{names}}",
     "gpImportDone": "Migrated {{count}} packages",
     "gpImportFailed": "{{count}} failed to migrate: {{first}}",
-    "uninstallChecking": "Counting…"
+    "uninstallChecking": "Counting…",
+    "newVersionBadge": "New {{version}}",
+    "newVersionHint": "Click to install {{version}}"
   },
   "project": {
     "history": "Project Version History",
