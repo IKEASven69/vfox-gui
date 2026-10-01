@@ -3,6 +3,7 @@ import { useTranslation } from "react-i18next";
 import type { AvailableVersion, DiskUsageEntry, Sdk, VersionScope } from "../constants";
 import { sdkMeta, formatBytes } from "../constants";
 import AppleButton from "./AppleButton";
+import BrandIcon, { brandIconFor } from "./BrandIcon";
 import ScopeSwitch from "./ScopeSwitch";
 import GroupedList, { Row, SectionLabel, EmptyHint, Tag } from "./GroupedList";
 import ProjectHistory from "./ProjectHistory";
@@ -217,6 +218,10 @@ export default function SdkDetail({
 // ── small presentational pieces ──
 
 export function IconBadge({ name, size }: { name: string; size?: "sm" | "lg" }) {
+  // 官方品牌图标与侧栏同源（BrandIcon），无官方图的 SDK 回落字母徽章
+  if (brandIconFor(name)) {
+    return <BrandIcon name={name} size={size === "lg" ? 48 : 28} />;
+  }
   const m = sdkMeta(name);
   const dim = size === "lg" ? "w-14 h-14 text-[22px]" : "w-8 h-8 text-[13px]";
   const radius = size === "lg" ? "var(--radius-lg)" : "var(--radius-sm)";

@@ -485,3 +485,15 @@ button, a, input, select {
 }
 
 
+
+/* ── Brand icon mats: 图标本体永远官方原色，垫子只负责对比度 ── */
+.brand-mat { display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; }
+.brand-mat-dark-glyph { background: #f5f5f7; }
+.brand-mat-light-glyph { background: #26262a; }
+.brand-mat-mid-glyph { background: #ebebed; }
+[data-theme="dark"] .brand-mat-dark-glyph { background: #ececee; }
+[data-theme="dark"] .brand-mat-mid-glyph { background: #3a3a3c; }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]):not([data-theme="dark"]) .brand-mat-dark-glyph { background: #ececee; }
+  :root:not([data-theme="light"]):not([data-theme="dark"]) .brand-mat-mid-glyph { background: #3a3a3c; }
+}
