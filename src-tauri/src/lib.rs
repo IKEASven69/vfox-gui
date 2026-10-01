@@ -171,6 +171,8 @@ pub fn run() {
             commands::global_packages_count,
             commands::global_packages_summary,
             commands::read_tool_versions,
+            commands::read_vfox_network_config,
+            commands::write_vfox_network_config,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

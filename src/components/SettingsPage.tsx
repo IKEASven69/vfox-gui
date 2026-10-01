@@ -1,8 +1,8 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { useTranslation } from "react-i18next";
 import i18n from "../i18n";
-import type { Theme } from "../constants";
+import type { Theme, VfoxNetworkConfig } from "../constants";
 import ThemeSwitch from "./ThemeSwitch";
 import SegmentedControl from "./SegmentedControl";
 import AppleButton from "./AppleButton";
@@ -49,6 +49,8 @@ export default function SettingsPage({
           </Row>
         </Card>
       </section>
+
+      <NetworkSection />
 
       {/* Updates */}
       <section>
@@ -138,5 +140,109 @@ function LangSwitch() {
         ]}
       />
     </div>
+  );
+}
+
+/** vfox 网络配置（C3）：proxy 下载代理 + registry 插件注册表镜像。
+ *  直接读写 vfox 自己的 config.yaml（按行编辑，注释与其余字段不动），
+ *  保存后对下一次 vfox 调用生效。 */
+function NetworkSection() {
+  const { t } = useTranslation();
+  const [net, setNet] = useState<VfoxNetworkConfig | null>(null);
+  const [dirty, setDirty] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [savedPath, setSavedPath] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    invoke<VfoxNetworkConfig>("read_vfox_network_config")
+      .then((c) => setNet(c))
+      .catch((e) => setError(String(e)));
+  }, []);
+
+  const save = useCallback(async () => {
+    if (!net || saving) return;
+    setSaving(true);
+    setError(null);
+    try {
+      const p = await invoke<string>("write_vfox_network_config", {
+        proxyEnable: net.proxyEnable,
+        proxyUrl: net.proxyUrl,
+        registryAddress: net.registryAddress,
+      });
+      setSavedPath(p);
+      setDirty(false);
+    } catch (e) {
+      setError(String(e));
+    } finally {
+      setSaving(false);
+    }
+  }, [net, saving]);
+
+  const edit = (patch: Partial<VfoxNetworkConfig>) => {
+    setNet((prev) => (prev ? { ...prev, ...patch } : prev));
+    setDirty(true);
+    setSavedPath(null);
+  };
+
+  return (
+    <section>
+      <SectionLabel>{t("settings.network")}</SectionLabel>
+      <Card>
+        {!net ? (
+          <Row label={error ? t("settings.networkLoadFailed") : t("common.loading")}>
+            <span />
+          </Row>
+        ) : (
+          <>
+            <Row label={t("settings.proxyEnable")} hint={t("settings.proxyEnableHint")}>
+              <div className="w-32">
+                <SegmentedControl
+                  value={net.proxyEnable ? "on" : "off"}
+                  onChange={(v) => edit({ proxyEnable: v === "on" })}
+                  options={[
+                    { value: "off", label: t("settings.proxyOff") },
+                    { value: "on", label: t("settings.proxyOn") },
+                  ]}
+                />
+              </div>
+            </Row>
+            <Divider />
+            <Row label={t("settings.proxyUrl")} hint={t("settings.proxyUrlHint")}>
+              <input
+                value={net.proxyUrl}
+                onChange={(e) => edit({ proxyUrl: e.target.value })}
+                placeholder="http://127.0.0.1:7890"
+                disabled={!net.proxyEnable}
+                className="w-64 bg-transparent outline-none text-[12px] px-2 py-1.5 rounded-[6px] glass-input disabled:opacity-40"
+                style={{ color: "var(--text)" }}
+              />
+            </Row>
+            <Divider />
+            <Row label={t("settings.registryAddress")} hint={t("settings.registryHint")}>
+              <input
+                value={net.registryAddress}
+                onChange={(e) => edit({ registryAddress: e.target.value })}
+                placeholder="https://…"
+                className="w-64 bg-transparent outline-none text-[12px] px-2 py-1.5 rounded-[6px] glass-input"
+                style={{ color: "var(--text)" }}
+              />
+            </Row>
+            <Divider />
+            <Row
+              label={t("settings.networkSave")}
+              hint={savedPath ? t("settings.networkSaved", { path: savedPath }) : undefined}
+            >
+              <div className="flex items-center gap-2">
+                {error && <span className="text-[11px]" style={{ color: "var(--danger)" }}>{error}</span>}
+                <AppleButton variant="primary" disabled={!dirty || saving} onClick={save}>
+                  {t("common.ok")}
+                </AppleButton>
+              </div>
+            </Row>
+          </>
+        )}
+      </Card>
+    </section>
   );
 }

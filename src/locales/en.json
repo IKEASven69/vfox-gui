@@ -181,7 +181,19 @@
     "updateVfoxHint": "Update the vfox command-line tool to the latest version",
     "about": "About",
     "vfoxGuiVersion": "vfox-gui Version",
-    "vfoxVersion": "vfox Version"
+    "vfoxVersion": "vfox Version",
+    "network": "Network",
+    "proxyEnable": "Download proxy",
+    "proxyEnableHint": "Route SDK downloads through an HTTP proxy (proxy.enable in vfox config.yaml)",
+    "proxyOn": "On",
+    "proxyOff": "Off",
+    "proxyUrl": "Proxy URL",
+    "proxyUrlHint": "e.g. http://127.0.0.1:7890",
+    "registryAddress": "Plugin registry",
+    "registryHint": "Mirror address for the plugin registry (registry.address); empty = official",
+    "networkSave": "Save network settings",
+    "networkSaved": "Written to {{path}}; takes effect on next vfox call",
+    "networkLoadFailed": "Cannot read vfox config.yaml"
   },
   "help": {
     "title": "Help",

@@ -163,6 +163,15 @@ export interface ToolVersionEntry {
   version: string;
 }
 
+/** vfox config.yaml 网络区块（proxy 下载代理 + registry 插件注册表镜像）。
+ *  其余字段（storage/cache/legacyVersionFile）不暴露，按行编辑保证不受影响。 */
+export interface VfoxNetworkConfig {
+  proxyEnable: boolean;
+  proxyUrl: string;
+  registryAddress: string;
+  configPath: string;
+}
+
 
 /** 全局包条目（某 SDK 版本里安装的运行时全局包）。bins 是该包提供的命令行
  *  工具名——卸载风险提示的依据。bytes 为 0 表示体积未知（python 侧 pip 不提供）。 */

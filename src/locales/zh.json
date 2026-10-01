@@ -181,7 +181,19 @@
     "updateVfoxHint": "更新 vfox 命令行工具到最新版本",
     "about": "关于",
     "vfoxGuiVersion": "vfox-gui 版本",
-    "vfoxVersion": "vfox 版本"
+    "vfoxVersion": "vfox 版本",
+    "network": "网络",
+    "proxyEnable": "下载代理",
+    "proxyEnableHint": "SDK 下载走 HTTP 代理（vfox config.yaml 的 proxy.enable）",
+    "proxyOn": "开启",
+    "proxyOff": "关闭",
+    "proxyUrl": "代理地址",
+    "proxyUrlHint": "如 http://127.0.0.1:7890",
+    "registryAddress": "插件注册表",
+    "registryHint": "插件源镜像地址（config.yaml 的 registry.address），留空用官方源",
+    "networkSave": "保存网络配置",
+    "networkSaved": "已写入 {{path}}，对下一次 vfox 调用生效",
+    "networkLoadFailed": "无法读取 vfox config.yaml"
   },
   "help": {
     "title": "帮助",

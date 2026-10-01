@@ -2473,6 +2473,145 @@ pub async fn global_packages_summary(sdk: String, version: String) -> Result<Glo
     .map_err(|e| format!("后台任务失败: {}", e))?
 }
 
+// ── vfox config.yaml 网络配置（C3：proxy 下载代理 + registry 插件注册表镜像）──
+// vfox 源码（internal/config/proxy.go / registry.go）确认字段：
+//   proxy: { url: String, enable: bool }   —— SDK 下载走 HTTP 代理
+//   registry: { address: String }          —— 插件注册表地址（镜像源）
+// 编辑策略：按行替换目标字段，注释与其余内容原样保留（不做整文件重序列化）。
+
+/// 读顶层 `section:` 块内 `key:` 的值（去引号）。找不到返回 None。
+fn yaml_get_field(content: &str, section: &str, key: &str) -> Option<String> {
+    let mut in_section = false;
+    for line in content.lines() {
+        let trimmed = line.trim_end();
+        if trimmed.is_empty() {
+            continue;
+        }
+        let indent = line.len() - line.trim_start().len();
+        if indent == 0 {
+            in_section = trimmed.starts_with(&format!("{section}:"));
+            continue;
+        }
+        if in_section && line.trim_start().starts_with(&format!("{key}:")) {
+            let v = line.trim_start()[key.len() + 1..].trim();
+            let unquoted = v.trim_matches('"').trim_matches('\'');
+            return Some(unquoted.to_string());
+        }
+    }
+    None
+}
+
+/// 按行编辑 YAML：把顶层 `section:` 块内的 `key:` 值替换为 value，其余行
+/// （含注释）原样保留。section/key 缺失时追加（缺 section 整段追加到文件末尾，
+/// 子键缩进取块内既有缩进、缺省 4 空格）。空值写成 `""`。
+fn yaml_set_field(content: &str, section: &str, key: &str, value: &str) -> String {
+    let val = if value.is_empty() { "\"\"".to_string() } else { value.to_string() };
+    let mut lines: Vec<String> = content.lines().map(str::to_string).collect();
+    let is_top = |l: &str| !l.starts_with(' ') && !l.starts_with('\t');
+    let sec_idx = lines.iter().position(|l| {
+        let t = l.trim_end();
+        is_top(l) && t.starts_with(&format!("{section}:"))
+    });
+    let Some(i) = sec_idx else {
+        if !lines.is_empty() && !lines[lines.len() - 1].trim().is_empty() {
+            lines.push(String::new());
+        }
+        lines.push(format!("{section}:"));
+        lines.push(format!("    {key}: {val}"));
+        return lines.join("
+") + "
+";
+    };
+    // section 块范围：(i, block_end)——首个非空顶层行之前
+    let mut block_end = lines.len();
+    for (j, l) in lines.iter().enumerate().skip(i + 1) {
+        if !l.trim().is_empty() && is_top(l) {
+            block_end = j;
+            break;
+        }
+    }
+    let child_indent = lines
+        .get(i + 1..block_end)
+        .and_then(|blk| blk.iter().find(|l| !l.trim().is_empty()))
+        .map(|l| l.len() - l.trim_start().len())
+        .unwrap_or(4)
+        .max(2);
+    let key_prefix = format!("{}{}:", " ".repeat(child_indent), key);
+    for j in (i + 1)..block_end {
+        if lines[j].trim_start().starts_with(&format!("{key}:")) {
+            lines[j] = format!("{key_prefix} {val}");
+            return lines.join("
+") + "
+";
+        }
+    }
+    // key 缺失 → 插到块尾（跳过块尾空行）
+    let mut insert_at = block_end;
+    while insert_at > i + 1 && lines[insert_at - 1].trim().is_empty() {
+        insert_at -= 1;
+    }
+    lines.insert(insert_at, format!("{key_prefix} {val}"));
+    lines.join("
+") + "
+"
+}
+
+fn vfox_config_path() -> std::path::PathBuf {
+    crate::vfox::vfox_home().join("config.yaml")
+}
+
+/// vfox config.yaml 的网络相关字段（其余字段 storage/cache/legacyVersionFile
+/// 不在 GUI 暴露范围，按行编辑策略保证不受影响）。
+#[derive(Debug, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct VfoxNetworkConfig {
+    pub proxy_enable: bool,
+    pub proxy_url: String,
+    pub registry_address: String,
+    pub config_path: String,
+}
+
+#[tauri::command]
+pub async fn read_vfox_network_config() -> Result<VfoxNetworkConfig, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let path = vfox_config_path();
+        let content = std::fs::read_to_string(&path).unwrap_or_default();
+        Ok(VfoxNetworkConfig {
+            proxy_enable: yaml_get_field(&content, "proxy", "enable").map(|v| v == "true").unwrap_or(false),
+            proxy_url: yaml_get_field(&content, "proxy", "url").unwrap_or_default(),
+            registry_address: yaml_get_field(&content, "registry", "address").unwrap_or_default(),
+            config_path: path.to_string_lossy().into_owned(),
+        })
+    })
+    .await
+    .map_err(|e| format!("后台任务失败: {}", e))?
+}
+
+/// 保存网络配置：按行编辑 config.yaml 的 proxy.enable/proxy.url/registry.address，
+/// 注释与其余字段不动；文件不存在时以最小骨架创建。返回写入路径。
+/// vfox 每次 CLI 调用时读配置，保存后即刻对下一次安装生效。
+#[tauri::command]
+pub async fn write_vfox_network_config(
+    proxy_enable: bool,
+    proxy_url: String,
+    registry_address: String,
+) -> Result<String, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let path = vfox_config_path();
+        if let Some(parent) = path.parent() {
+            let _ = std::fs::create_dir_all(parent);
+        }
+        let content = std::fs::read_to_string(&path).unwrap_or_default();
+        let out = yaml_set_field(&content, "proxy", "enable", if proxy_enable { "true" } else { "false" });
+        let out = yaml_set_field(&out, "proxy", "url", &proxy_url);
+        let out = yaml_set_field(&out, "registry", "address", &registry_address);
+        std::fs::write(&path, out).map_err(|e| format!("写入 config.yaml 失败: {e}"))?;
+        Ok(path.to_string_lossy().into_owned())
+    })
+    .await
+    .map_err(|e| format!("后台任务失败: {}", e))?
+}
+
 /// 带超时地跑一个子进程并捕获 stdout（stderr 丢弃）。超时会杀进程树。
 fn run_capture(program: &str, args: &[&str], timeout: Duration) -> Result<String, String> {
     use std::process::Stdio;
@@ -3136,5 +3275,52 @@ mod tool_versions_tests {
         let entries = parse_tool_versions(text);
         assert_eq!(entries.len(), 1, "BOM 首行可解析；缺版本/空行跳过");
         assert_eq!(entries[0].version, "20.18.0");
+    }
+}
+
+#[cfg(test)]
+mod network_config_tests {
+    use super::*;
+
+    const SAMPLE: &str = "# vfox 配置\nproxy:\n    url: \"\"\n    enable: false\nstorage:\n    sdkPath: \"\" # 自定义 SDK 存放地\nregistry:\n    address: \"\"\n";
+
+    #[test]
+    fn yaml_set_field_updates_in_place_and_keeps_comments() {
+        let out = yaml_set_field(SAMPLE, "proxy", "url", "http://127.0.0.1:7890");
+        assert!(out.contains("url: http://127.0.0.1:7890"), "目标行已更新: {out}");
+        assert!(out.contains("# vfox 配置"), "文件头注释保留");
+        assert!(out.contains("sdkPath: \"\" # 自定义 SDK 存放地"), "其他字段与行内注释不动");
+        assert!(out.contains("enable: false"), "同区块其他键不动");
+        assert_eq!(yaml_get_field(&out, "proxy", "url").as_deref(), Some("http://127.0.0.1:7890"));
+    }
+
+    #[test]
+    fn yaml_set_field_appends_missing_key_and_section() {
+        let minimal = "legacyVersionFile:\n    enable: true\n";
+        let out = yaml_set_field(minimal, "proxy", "enable", "true");
+        assert!(out.contains("proxy:\n    enable: true\n"), "缺 section 整段追加: {out}");
+        assert!(out.contains("legacyVersionFile:"), "原有内容在前");
+        // 已有 section 但缺 key：插进块内（兄弟缩进）
+        let no_address = "registry:\n    mirror: x\n";
+        let out2 = yaml_set_field(no_address, "registry", "address", "https://reg.example.com");
+        assert!(out2.contains("address: https://reg.example.com"), "缺 key 追加进块: {out2}");
+        assert!(out2.contains("mirror: x"), "块内既有键保留");
+    }
+
+    #[test]
+    fn yaml_set_field_empty_value_writes_quoted_and_idempotent() {
+        let out = yaml_set_field(SAMPLE, "registry", "address", "");
+        assert!(out.contains("address: \"\""), "空值写成引号空串: {out}");
+        let twice = yaml_set_field(&out, "registry", "address", "");
+        assert_eq!(out, twice, "重复写入幂等");
+    }
+
+    #[test]
+    fn yaml_get_field_reads_quoted_and_bool() {
+        assert_eq!(yaml_get_field(SAMPLE, "proxy", "enable").as_deref(), Some("false"));
+        let quoted = "proxy:\n  url: 'http://p:1'\n";
+        assert_eq!(yaml_get_field(quoted, "proxy", "url").as_deref(), Some("http://p:1"));
+        assert_eq!(yaml_get_field(SAMPLE, "nope", "url"), None);
+        assert_eq!(yaml_get_field(SAMPLE, "proxy", "missing"), None);
     }
 }
