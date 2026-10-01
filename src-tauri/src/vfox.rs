@@ -107,6 +107,42 @@ fn current_version(home: &Path, sdk: &str) -> Option<String> {
     None
 }
 
+/// 版本目录的运行时根（全局包查看/卸载的扫描起点）。活跃版本物化在
+/// `sdks/<sdk>`（Windows junction / unix symlink），非活跃版本在
+/// `cache/<sdk>/v-<ver>/<sdk>-<ver>/`，与 `vfox use` 的物化逻辑一致。
+pub(crate) fn runtime_root_for(sdk: &str, version: &str) -> Option<std::path::PathBuf> {
+    let home = vfox_home();
+    // 活跃版本：sdks/<sdk> 的 link 目标含 v-<version> 且等于请求的版本
+    if let Ok(target) = fs::read_link(home.join("sdks").join(sdk)) {
+        for comp in target.components() {
+            if let Some(s) = comp.as_os_str().to_str() {
+                if let Some(ver) = s.strip_prefix("v-") {
+                    if ver == version {
+                        let link = home.join("sdks").join(sdk);
+                        if link.is_dir() {
+                            return Some(link);
+                        }
+                    }
+                }
+            }
+        }
+    }
+    let inner = home
+        .join("cache")
+        .join(sdk)
+        .join(format!("v-{version}"))
+        .join(format!("{sdk}-{version}"));
+    if inner.is_dir() {
+        return Some(inner);
+    }
+    // 兜底：个别插件布局 v-<ver> 本身即运行时根
+    let outer = home.join("cache").join(sdk).join(format!("v-{version}"));
+    if outer.is_dir() {
+        return Some(outer);
+    }
+    None
+}
+
 /// List installed versions for one SDK, read from cache/<sdk>/v-* dirs.
 /// `cur` flags the active one (already resolved from the symlink).
 fn installed_versions(home: &Path, sdk: &str, cur: Option<&str>) -> Vec<Version> {

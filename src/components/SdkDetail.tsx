@@ -1,9 +1,10 @@
-import { memo, useEffect, useMemo, useState } from "react";
+import { Fragment, memo, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { AvailableVersion, DiskUsageEntry, Sdk, VersionScope } from "../constants";
 import { sdkMeta, formatBytes } from "../constants";
 import AppleButton from "./AppleButton";
 import BrandIcon, { brandIconFor } from "./BrandIcon";
+import GlobalPackagesPanel from "./GlobalPackagesPanel";
 import ScopeSwitch from "./ScopeSwitch";
 import GroupedList, { Row, SectionLabel, EmptyHint, Tag } from "./GroupedList";
 import ProjectHistory from "./ProjectHistory";
@@ -33,16 +34,24 @@ interface Props {
   onRemove: (version: string) => void;
   onRefresh: () => void;
   onRetry: () => void;
+  /** 全局包卸载成功后刷新磁盘占用（App.loadDiskUsage）。 */
+  onBytesChanged: () => void;
 }
+
+/** 支持全局包面板的生态（与 Rust 侧 global_packages 的分派一致）。 */
+const GLOBAL_PACKAGES_ECOSYSTEMS = new Set(["nodejs", "python"]);
 
 export default function SdkDetail({
   currentSdk, filteredVersions, diskUsage, history,
   searchLoading, versionQuery, busy, sdkBusy, error,
   versionScope, projectPath,
   onVersionQueryChange, onScopeChange, onPickProject,
-  onUse, onInstall, onRemove, onRefresh, onRetry,
+  onUse, onInstall, onRemove, onRefresh, onRetry, onBytesChanged,
 }: Props) {
   const { t } = useTranslation();
+  // 展开全局包面板的版本（同一时刻最多一个）
+  const [gpOpen, setGpOpen] = useState<string | null>(null);
+  useEffect(() => { setGpOpen(null); }, [currentSdk.name]);
   // 错误折叠：vfox 失败时的原始 CLI 输出可能有几十上百行，全量 <pre> 会把
   // 详情页撑爆。默认只显示前 3 行 + 剩余行数提示，可『展开全部』。
   const [errorExpanded, setErrorExpanded] = useState(false);
@@ -108,16 +117,29 @@ export default function SdkDetail({
                 const usage = diskUsage.find(
                   (d) => d.sdk === currentSdk.name && d.version === v.version
                 );
+                const gpSupported = GLOBAL_PACKAGES_ECOSYSTEMS.has(currentSdk.name);
                 return (
-                  <VersionRow
-                    key={v.version}
-                    version={v.version}
-                    isCurrent={v.is_current}
-                    usage={usage}
-                    busy={sdkBusy}
-                    onUse={() => onUse(v.version)}
-                    onRemove={() => onRemove(v.version)}
-                  />
+                  <Fragment key={v.version}>
+                    <VersionRow
+                      version={v.version}
+                      isCurrent={v.is_current}
+                      usage={usage}
+                      busy={sdkBusy}
+                      gpSupported={gpSupported}
+                      gpOpen={gpOpen === v.version}
+                      onToggleGlobals={() => setGpOpen(gpOpen === v.version ? null : v.version)}
+                      onUse={() => onUse(v.version)}
+                      onRemove={() => onRemove(v.version)}
+                    />
+                    {gpOpen === v.version && (
+                      <GlobalPackagesPanel
+                        sdk={currentSdk.name}
+                        version={v.version}
+                        isCurrent={v.is_current}
+                        onBytesChanged={onBytesChanged}
+                      />
+                    )}
+                  </Fragment>
                 );
               })}
             </GroupedList>
@@ -236,12 +258,16 @@ export function IconBadge({ name, size }: { name: string; size?: "sm" | "lg" }) 
 }
 
 const VersionRow = memo(function VersionRow({
-  version, isCurrent, usage, busy,
+  version, isCurrent, usage, busy, gpSupported, gpOpen, onToggleGlobals,
   onUse, onRemove,
 }: {
   version: string; isCurrent: boolean;
   usage: DiskUsageEntry | undefined;
-  busy: boolean; onUse: () => void; onRemove: () => void;
+  busy: boolean;
+  /** 该生态支持全局包面板（nodejs/python） */
+  gpSupported: boolean;
+  gpOpen: boolean; onToggleGlobals: () => void;
+  onUse: () => void; onRemove: () => void;
 }) {
   const { t } = useTranslation();
   return (
@@ -264,6 +290,16 @@ const VersionRow = memo(function VersionRow({
           </span>
         )}
         <div className="flex gap-1.5">
+          {gpSupported && (
+            <AppleButton
+              variant="ghost"
+              disabled={false}
+              onClick={onToggleGlobals}
+              title={t("detail.gpButton")}
+            >
+              {gpOpen ? t("detail.gpHide") : t("detail.gpButton")}
+            </AppleButton>
+          )}
           {!isCurrent && (
             <AppleButton variant="primary" disabled={busy} onClick={onUse}>{t("detail.switch")}</AppleButton>
           )}

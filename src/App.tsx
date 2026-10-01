@@ -702,6 +702,7 @@ export default function App() {
             onRemove={(v) => handleRemove(currentSdk.name, v)}
             onRefresh={handleRefresh}
             onRetry={() => { setError(null); setLoading(true); refresh(); }}
+            onBytesChanged={loadDiskUsage}
           />
         ) : (
           <div className="flex-1 flex flex-col items-center justify-center gap-2 text-center px-8"

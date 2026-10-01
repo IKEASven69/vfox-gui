@@ -10,6 +10,8 @@
 // succeeded — so we treat it as success rather than an error.
 
 use crate::vfox::{self, Sdk};
+use serde::Serialize;
+use std::path::Path;
 use std::io::Read;
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
@@ -1560,6 +1562,478 @@ pub struct HistoryEntry {
     pub from: Option<String>,
 }
 
+// ── 全局包管理（查看/安全卸载运行时全局包，见 docs/PLAN-global-packages.md）──
+
+/// 单个全局包条目。`bins` 是风险提示的依据：卸掉带 CLI 的包会把用户的
+/// 命令行工具一起干掉（如 pnpm/dsh）。
+#[derive(Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct GlobalPackageEntry {
+    pub name: String,
+    pub version: Option<String>,
+    pub bytes: u64,
+    pub description: Option<String>,
+    pub bins: Vec<String>,
+}
+
+/// 全局包清单报告。`warning` 为降级提示代码（"npm-missing"=全局包树损坏，
+/// "pip-failed:<detail>"=pip 列举失败），前端映射成黄条文案并禁用单包操作。
+#[derive(Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct GlobalPackagesReport {
+    pub sdk: String,
+    pub version: String,
+    /// 运行时本体字节数（版本目录总大小 − 全局包大小）
+    pub runtime_bytes: u64,
+    pub packages_bytes: u64,
+    pub packages: Vec<GlobalPackageEntry>,
+    pub warning: Option<String>,
+}
+
+/// 卸载结果。dry_run 时 `would_remove` 列出将删除的文件/目录绝对路径、
+/// `key_tools` 列出命中关键 CLI 的 bins（前端红色强警告）。
+#[derive(Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct GlobalUninstallOutcome {
+    pub dry_run: bool,
+    pub would_remove: Vec<String>,
+    pub freed_bytes: u64,
+    pub removed: Vec<String>,
+    pub failed: Vec<(String, String)>,
+    pub key_tools: Vec<String>,
+}
+
+/// 内置组件禁卸名单：卸掉会废掉运行时自身（sdk → 包名列表）。
+const PROTECTED_PACKAGES: &[(&str, &[&str])] = &[
+    ("nodejs", &["npm", "corepack", "npx"]),
+    ("python", &["pip", "setuptools", "wheel"]),
+];
+
+/// 命中即红色强警告的关键 CLI 工具（bins 出现这些名字时用户大概率在别处依赖它）。
+const KEY_TOOL_BINS: &[&str] = &[
+    "pnpm", "yarn", "tsc", "tsx", "eslint", "prettier", "prisma", "vite",
+    "next", "vercel", "netlify", "expo", "jest", "vitest", "playwright",
+];
+
+fn protected_reason(sdk: &str, package: &str) -> Option<&'static str> {
+    PROTECTED_PACKAGES
+        .iter()
+        .find(|(s, _)| *s == sdk)
+        .and_then(|(_, list)| {
+            list.contains(&package).then_some("内置组件，卸载会损坏运行时自身")
+        })
+}
+
+fn key_tools_in(bins: &[String]) -> Vec<String> {
+    bins.iter()
+        .filter(|b| KEY_TOOL_BINS.contains(&b.as_str()))
+        .cloned()
+        .collect()
+}
+
+/// nodejs 运行时根里的 node 可执行文件（unix 物化在 bin/ 下）。
+fn node_exe(runtime_root: &Path) -> std::path::PathBuf {
+    if cfg!(windows) {
+        runtime_root.join("node.exe")
+    } else {
+        runtime_root.join("bin").join("node")
+    }
+}
+
+fn python_exe(runtime_root: &Path) -> std::path::PathBuf {
+    if cfg!(windows) {
+        runtime_root.join("python.exe")
+    } else {
+        runtime_root.join("bin").join("python3")
+    }
+}
+
+/// 从 package.json 的 bin 字段提取命令名：对象形态取 keys，字符串形态
+/// （单命令包）取包名本身。解析失败返回空。
+fn bins_from_manifest(manifest: &serde_json::Value, package_name: &str) -> Vec<String> {
+    match manifest.get("bin") {
+        Some(serde_json::Value::Object(map)) => map.keys().cloned().collect(),
+        Some(serde_json::Value::String(_)) => vec![package_name.to_string()],
+        _ => Vec::new(),
+    }
+}
+
+/// node_modules 里的包名 → 磁盘目录（@scope/name 两段展开）。
+fn pkg_dir_for(nm: &Path, package: &str) -> std::path::PathBuf {
+    if let Some(rest) = package.strip_prefix('@') {
+        let mut p = nm.to_path_buf();
+        for (i, seg) in rest.split('/').enumerate() {
+            p = p.join(if i == 0 { format!("@{seg}") } else { seg.to_string() });
+        }
+        p
+    } else {
+        nm.join(package)
+    }
+}
+
+/// 扫描 node_modules 顶层全局包（@scope 展开），按体积降序。
+/// npm 自身缺失（node_modules/npm/package.json 不存在）视为树损坏。
+fn scan_node_modules(nm: &Path) -> (Vec<GlobalPackageEntry>, Option<String>) {
+    let mut entries: Vec<GlobalPackageEntry> = Vec::new();
+    let corrupt = (!nm.join("npm").join("package.json").is_file())
+        .then(|| "npm-missing".to_string());
+
+    let mut push_pkg = |dir: &Path, entries: &mut Vec<GlobalPackageEntry>| {
+        let manifest_text = std::fs::read_to_string(dir.join("package.json")).unwrap_or_default();
+        let manifest: serde_json::Value = serde_json::from_str(&manifest_text).unwrap_or_default();
+        let dir_name = dir
+            .file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or("")
+            .to_string();
+        let name = manifest
+            .get("name")
+            .and_then(|v| v.as_str())
+            .map(str::to_string)
+            .unwrap_or(dir_name);
+        let bins = bins_from_manifest(&manifest, &name);
+        entries.push(GlobalPackageEntry {
+            name,
+            version: manifest.get("version").and_then(|v| v.as_str()).map(String::from),
+            bytes: dir_size(dir),
+            description: manifest.get("description").and_then(|v| v.as_str()).map(String::from),
+            bins,
+        });
+    };
+
+    if let Ok(top) = std::fs::read_dir(nm) {
+        for entry in top.filter_map(|e| e.ok()) {
+            let path = entry.path();
+            let fname = entry.file_name().to_string_lossy().into_owned();
+            if fname.starts_with('.') || !path.is_dir() {
+                continue; // .bin / .package-lock.json / 散文件
+            }
+            if fname.starts_with('@') {
+                if let Ok(scope) = std::fs::read_dir(&path) {
+                    for sub in scope.filter_map(|e| e.ok()) {
+                        if sub.path().is_dir() {
+                            push_pkg(&sub.path(), &mut entries);
+                        }
+                    }
+                }
+            } else {
+                push_pkg(&path, &mut entries);
+            }
+        }
+    }
+    entries.sort_by(|a, b| b.bytes.cmp(&a.bytes));
+    (entries, corrupt)
+}
+
+/// nodejs 全局包卸载：优先走该版本自带的 npm（`npm remove -g --prefix`，
+/// 会连带清理 bin shim）；npm 损坏时降级为直删包目录 + bin shim（先经
+/// dry_run 列出）。bin shim 在 Windows 是 `<bin>`/`<bin>.cmd`/`<bin>.ps1` 一组。
+fn nodejs_uninstall(
+    runtime_root: &Path,
+    nm: &Path,
+    packages: &[String],
+    dry_run: bool,
+    outcome: &mut GlobalUninstallOutcome,
+) {
+    let node = node_exe(runtime_root);
+    let npm_cli = nm.join("npm").join("bin").join("npm-cli.js");
+    let npm_usable = node.is_file() && npm_cli.is_file();
+
+    let mut pkg_dirs: Vec<(String, std::path::PathBuf)> = Vec::new();
+    for pkg in packages {
+        let dir = pkg_dir_for(nm, pkg);
+        if !dir.is_dir() {
+            outcome.failed.push((pkg.clone(), "未安装".into()));
+        } else {
+            pkg_dirs.push((pkg.clone(), dir));
+        }
+    }
+
+    // 收集受影响 bins 与将删除的路径（dry_run 与真实路径共用）
+    for (pkg, dir) in &pkg_dirs {
+        let manifest: serde_json::Value = serde_json::from_str(
+            &std::fs::read_to_string(dir.join("package.json")).unwrap_or_default(),
+        )
+        .unwrap_or_default();
+        let bins = bins_from_manifest(&manifest, pkg);
+        outcome.key_tools.extend(key_tools_in(&bins));
+        outcome.freed_bytes += dir_size(dir);
+        outcome.would_remove.push(dir.to_string_lossy().into_owned());
+        for bin in &bins {
+            for shim in bin_shims(runtime_root, bin) {
+                if shim.exists() {
+                    outcome.would_remove.push(shim.to_string_lossy().into_owned());
+                }
+            }
+        }
+    }
+
+    if dry_run {
+        return;
+    }
+
+    if npm_usable {
+        let root_str = runtime_root.to_string_lossy().into_owned();
+        let mut args: Vec<String> = vec![
+            npm_cli.to_string_lossy().into_owned(),
+            "remove".into(),
+            "-g".into(),
+            "--prefix".into(),
+            root_str,
+            "--no-audit".into(),
+            "--no-fund".into(),
+        ];
+        args.extend(pkg_dirs.iter().map(|(p, _)| p.clone()));
+        let arg_refs: Vec<&str> = args.iter().map(String::as_str).collect();
+        match run_capture(&node.to_string_lossy(), &arg_refs, Duration::from_secs(300)) {
+            Ok(_) => {
+                for (pkg, _) in &pkg_dirs {
+                    outcome.removed.push(pkg.clone());
+                }
+                return;
+            }
+            Err(e) => outcome.failed.push(("npm".into(), format!("npm remove 失败: {e}"))),
+        }
+    }
+
+    // 降级：直删包目录与 bin shim（树已损坏时 npm 自身跑不动）
+    for (pkg, dir) in &pkg_dirs {
+        let manifest: serde_json::Value = serde_json::from_str(
+            &std::fs::read_to_string(dir.join("package.json")).unwrap_or_default(),
+        )
+        .unwrap_or_default();
+        let bins = bins_from_manifest(&manifest, pkg);
+        match std::fs::remove_dir_all(dir) {
+            Ok(()) => {
+                for bin in &bins {
+                    for shim in bin_shims(runtime_root, bin) {
+                        let _ = std::fs::remove_file(&shim);
+                    }
+                }
+                outcome.removed.push(pkg.clone());
+            }
+            Err(e) => outcome.failed.push((pkg.clone(), format!("删除失败: {e}"))),
+        }
+    }
+}
+
+/// bin 名在运行时根的 shim 文件组（Windows 三件套 + unix 裸名）。
+fn bin_shims(runtime_root: &Path, bin: &str) -> Vec<std::path::PathBuf> {
+    if cfg!(windows) {
+        vec![
+            runtime_root.join(bin),
+            runtime_root.join(format!("{bin}.cmd")),
+            runtime_root.join(format!("{bin}.ps1")),
+        ]
+    } else {
+        vec![runtime_root.join("bin").join(bin)]
+    }
+}
+
+/// python 全局包列举：用该版本自己的解释器跑 `pip list --format=json`。
+/// 体积 pip 不提供，M1 显示为未知（0）。
+fn python_list_packages(runtime_root: &Path) -> Result<Vec<GlobalPackageEntry>, String> {
+    let py = python_exe(runtime_root);
+    if !py.is_file() {
+        return Err("解释器不存在".into());
+    }
+    let out = run_capture(
+        &py.to_string_lossy(),
+        &["-m", "pip", "list", "--format=json", "--disable-pip-version-check"],
+        Duration::from_secs(120),
+    )?;
+    let parsed: Vec<serde_json::Value> = serde_json::from_str(out.trim())
+        .map_err(|e| format!("pip 输出解析失败: {e}"))?;
+    Ok(parsed
+        .into_iter()
+        .map(|v| GlobalPackageEntry {
+            name: v.get("name").and_then(|n| n.as_str()).unwrap_or("").to_string(),
+            version: v.get("version").and_then(|n| n.as_str()).map(String::from),
+            bytes: 0,
+            description: None,
+            bins: Vec::new(),
+        })
+        .filter(|p| !p.name.is_empty())
+        .collect())
+}
+
+/// 查看某版本的全局包清单与体积拆分。活跃版本扫 `sdks/<sdk>`（物化体），
+/// 非活跃扫 cache 目录。`warning` 非空时前端显示黄条并禁用单包操作。
+#[tauri::command]
+pub async fn global_packages(sdk: String, version: String) -> Result<GlobalPackagesReport, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let root = crate::vfox::runtime_root_for(&sdk, &version)
+            .ok_or_else(|| format!("未找到 {sdk}@{version} 的安装目录"))?;
+        match sdk.as_str() {
+            "nodejs" => {
+                let nm = root.join("node_modules");
+                let (mut packages, corrupt) = if nm.is_dir() {
+                    scan_node_modules(&nm)
+                } else {
+                    (Vec::new(), Some("npm-missing".to_string()))
+                };
+                let packages_bytes: u64 = packages.iter().map(|p| p.bytes).sum();
+                let runtime_bytes = dir_size(&root).saturating_sub(packages_bytes);
+                let report = GlobalPackagesReport {
+                    sdk,
+                    version,
+                    runtime_bytes,
+                    packages_bytes,
+                    packages,
+                    warning: corrupt,
+                };
+                Ok(report)
+            }
+            "python" => {
+                let runtime_bytes = dir_size(&root);
+                let (packages, warning) = match python_list_packages(&root) {
+                    Ok(mut list) => {
+                        list.sort_by(|a, b| a.name.cmp(&b.name));
+                        (list, None)
+                    }
+                    Err(e) => (Vec::new(), Some(format!("pip-failed:{e}"))),
+                };
+                Ok(GlobalPackagesReport {
+                    sdk,
+                    version,
+                    runtime_bytes,
+                    packages_bytes: 0,
+                    packages,
+                    warning,
+                })
+            }
+            other => Err(format!("暂不支持 {other} 生态的全局包查看")),
+        }
+    })
+    .await
+    .map_err(|e| format!("后台任务失败: {}", e))?
+}
+
+/// 卸载全局包。**必须先 dry_run=true 拿到将删清单再真实执行**——前端确认框
+/// 展示的就是 dry_run 结果。内置组件（npm/pip 等）直接拒绝。
+#[tauri::command]
+pub async fn global_uninstall(
+    sdk: String,
+    version: String,
+    packages: Vec<String>,
+    dry_run: bool,
+) -> Result<GlobalUninstallOutcome, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let mut outcome = GlobalUninstallOutcome {
+            dry_run,
+            would_remove: Vec::new(),
+            freed_bytes: 0,
+            removed: Vec::new(),
+            failed: Vec::new(),
+            key_tools: Vec::new(),
+        };
+        for pkg in &packages {
+            if let Some(reason) = protected_reason(&sdk, pkg) {
+                outcome.failed.push((pkg.clone(), reason.into()));
+            }
+        }
+        let allowed: Vec<String> = packages
+            .iter()
+            .filter(|p| !outcome.failed.iter().any(|(f, _)| f == *p))
+            .cloned()
+            .collect();
+        if allowed.is_empty() {
+            return Ok(outcome);
+        }
+
+        let root = crate::vfox::runtime_root_for(&sdk, &version)
+            .ok_or_else(|| format!("未找到 {sdk}@{version} 的安装目录"))?;
+        match sdk.as_str() {
+            "nodejs" => {
+                let nm = root.join("node_modules");
+                nodejs_uninstall(&root, &nm, &allowed, dry_run, &mut outcome);
+            }
+            "python" => {
+                let py = python_exe(&root);
+                if !py.is_file() {
+                    for pkg in &allowed {
+                        outcome.failed.push((pkg.clone(), "解释器不存在".into()));
+                    }
+                    return Ok(outcome);
+                }
+                if dry_run {
+                    outcome.freed_bytes = 0; // pip 不提供每包体积
+                } else {
+                    let mut args: Vec<String> = vec![
+                        "-m".into(),
+                        "pip".into(),
+                        "uninstall".into(),
+                        "-y".into(),
+                        "--disable-pip-version-check".into(),
+                    ];
+                    args.extend(allowed.iter().cloned());
+                    let arg_refs: Vec<&str> = args.iter().map(String::as_str).collect();
+                    match run_capture(&py.to_string_lossy(), &arg_refs, Duration::from_secs(300)) {
+                        Ok(_) => outcome.removed.extend(allowed),
+                        Err(e) => {
+                            for pkg in &allowed {
+                                outcome.failed.push((pkg.clone(), e.clone()));
+                            }
+                        }
+                    }
+                }
+            }
+            other => {
+                for pkg in &allowed {
+                    outcome.failed.push((pkg.clone(), format!("暂不支持 {other} 生态")));
+                }
+            }
+        }
+        outcome.key_tools.sort();
+        outcome.key_tools.dedup();
+        Ok(outcome)
+    })
+    .await
+    .map_err(|e| format!("后台任务失败: {}", e))?
+}
+
+/// 带超时地跑一个子进程并捕获 stdout（stderr 丢弃）。超时会杀进程树。
+fn run_capture(program: &str, args: &[&str], timeout: Duration) -> Result<String, String> {
+    use std::process::Stdio;
+    let mut child = spawn_quiet(program)
+        .args(args)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .stdin(Stdio::null())
+        .spawn()
+        .map_err(|e| format!("无法启动 {program}: {e}"))?;
+    let mut stdout = child.stdout.take().expect("stdout piped");
+    let mut stderr = child.stderr.take().expect("stderr piped");
+    let (tx, rx) = std::sync::mpsc::channel::<(String, String)>();
+    let reader = std::thread::spawn(move || {
+        let mut out = String::new();
+        let mut err = String::new();
+        let _ = stdout.read_to_string(&mut out);
+        let _ = stderr.read_to_string(&mut err);
+        let _ = tx.send((out, err));
+    });
+    match rx.recv_timeout(timeout) {
+        Ok((out, err)) => {
+            let status = child.wait().map_err(|e| format!("等待退出失败: {e}"))?;
+            if status.success() {
+                Ok(out)
+            } else {
+                let tail: String = err.lines().rev().take(3).collect::<Vec<_>>().into_iter().rev().collect::<Vec<_>>().join("; ");
+                Err(format!("退出码 {:?}{}", status.code(), if tail.is_empty() { String::new() } else { format!(": {tail}") }))
+            }
+        }
+        Err(_) => {
+            let pid = child.id();
+            #[cfg(windows)]
+            let _ = spawn_quiet("taskkill").args(["/PID", &pid.to_string(), "/T", "/F"]).output();
+            #[cfg(not(windows))]
+            let _ = spawn_quiet("kill").arg("-9").arg(pid.to_string()).output();
+            let _ = child.wait();
+            Err("执行超时".into())
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1810,5 +2284,163 @@ mod scanner_tests {
         assert_eq!(count, 1, "must replace, not duplicate");
         assert!(content.contains("25.0.2+10"));
         assert!(!content.contains("21.0.10-graal"));
+    }
+}
+
+#[cfg(test)]
+mod global_packages_tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn bins_from_manifest_object_string_and_missing() {
+        let obj = json!({ "name": "opencode", "bin": { "opencode": "cli.js", "oc": "cli.js" } });
+        let mut bins = bins_from_manifest(&obj, "opencode");
+        bins.sort(); // 对象键序无语义
+        assert_eq!(bins, vec!["oc", "opencode"]);
+
+        let single = json!({ "name": "dsh", "bin": "cli.js" });
+        assert_eq!(bins_from_manifest(&single, "dsh"), vec!["dsh"]);
+
+        let none = json!({ "name": "left-pad" });
+        assert!(bins_from_manifest(&none, "left-pad").is_empty());
+    }
+
+    #[test]
+    fn protected_packages_are_rejected_others_pass() {
+        assert!(protected_reason("nodejs", "npm").is_some());
+        assert!(protected_reason("nodejs", "corepack").is_some());
+        assert!(protected_reason("python", "pip").is_some());
+        assert!(protected_reason("python", "setuptools").is_some());
+        assert!(protected_reason("nodejs", "express").is_none());
+        assert!(protected_reason("python", "requests").is_none());
+        assert!(protected_reason("golang", "npm").is_none(), "名单按生态隔离");
+    }
+
+    #[test]
+    fn pkg_dir_resolves_scoped_packages() {
+        let nm = Path::new("D:/x/node_modules");
+        assert_eq!(pkg_dir_for(nm, "lodash"), nm.join("lodash"));
+        assert_eq!(
+            pkg_dir_for(nm, "@opencode/cli"),
+            nm.join("@opencode").join("cli")
+        );
+    }
+
+    #[test]
+    fn key_tool_bins_are_detected() {
+        let hits = key_tools_in(&["pnpm".into(), "mycli".into(), "prisma".into()]);
+        assert_eq!(hits, vec!["pnpm".to_string(), "prisma".to_string()]);
+        assert!(key_tools_in(&["mycli".into()]).is_empty());
+    }
+
+    #[test]
+    fn scan_node_modules_expands_scope_and_flags_corruption() {
+        let root = std::env::temp_dir().join("vfox_gpkg_scan");
+        let _ = std::fs::remove_dir_all(&root);
+        let nm = root.join("node_modules");
+        std::fs::create_dir_all(nm.join("@scope").join("pkg")).unwrap();
+        std::fs::create_dir_all(nm.join("plain")).unwrap();
+        std::fs::create_dir_all(nm.join(".bin")).unwrap();
+        std::fs::write(
+            nm.join("@scope").join("pkg").join("package.json"),
+            r#"{"name":"@scope/pkg","version":"1.0.0","bin":{"sc":"a.js"}}"#,
+        )
+        .unwrap();
+        std::fs::write(
+            nm.join("plain").join("package.json"),
+            r#"{"name":"plain","version":"2.0.0","description":"d"}"#,
+        )
+        .unwrap();
+
+        let (entries, corrupt) = scan_node_modules(&nm);
+        // npm 缺失 → 树损坏
+        assert_eq!(corrupt.as_deref(), Some("npm-missing"));
+        assert_eq!(entries.len(), 2);
+        let scoped = entries.iter().find(|e| e.name == "@scope/pkg").unwrap();
+        assert_eq!(scoped.bins, vec!["sc".to_string()]);
+        assert!(entries.iter().all(|e| e.name != ".bin"));
+
+        // npm 在场 → 无损坏告警
+        std::fs::create_dir_all(nm.join("npm")).unwrap();
+        std::fs::write(
+            nm.join("npm").join("package.json"),
+            r#"{"name":"npm","version":"10.0.0"}"#,
+        )
+        .unwrap();
+        let (entries, corrupt) = scan_node_modules(&nm);
+        assert!(corrupt.is_none());
+        assert_eq!(entries.len(), 3);
+        assert!(entries[0].bytes >= entries[entries.len() - 1].bytes, "按体积降序");
+        let _ = std::fs::remove_dir_all(&root);
+    }
+}
+
+#[cfg(test)]
+mod global_uninstall_tests {
+    use super::*;
+    use std::fs;
+
+    /// 搭一个最小 nodejs 运行时根：node.exe 缺失（npm 不可用 → 走直删降级），
+    /// 一个带 bin 的包 + 三件套 shim。验证 dry_run 不动盘、真实执行删干净。
+    #[test]
+    fn nodejs_uninstall_fallback_dry_run_then_real() {
+        let root = std::env::temp_dir().join(format!("vfox_gp_uninstall_{}", std::process::id()));
+        let nm = root.join("node_modules");
+        let pkg = nm.join("fake-cli");
+        fs::create_dir_all(&pkg).unwrap();
+        fs::write(
+            pkg.join("package.json"),
+            r#"{"name":"fake-cli","version":"1.0.0","bin":{"fake-cli":"run.js"}}"#,
+        )
+        .unwrap();
+        fs::write(pkg.join("run.js"), "console.log(1)").unwrap();
+        // Windows shim 三件套 + unix 裸名（都写上，测试按平台只断言存在的被删）
+        for shim in bin_shims(&root, "fake-cli") {
+            fs::write(&shim, "@echo off").unwrap();
+        }
+
+        // dry_run：列出将删路径与释放体积，但不动盘
+        let mut outcome = GlobalUninstallOutcome {
+            dry_run: true, would_remove: vec![], freed_bytes: 0,
+            removed: vec![], failed: vec![], key_tools: vec![],
+        };
+        nodejs_uninstall(&root, &nm, &["fake-cli".into()], true, &mut outcome);
+        assert!(outcome.removed.is_empty(), "dry_run 不得真删");
+        assert_eq!(outcome.failed.len(), 0);
+        assert!(outcome.freed_bytes > 0);
+        assert!(outcome.would_remove.iter().any(|p| p.ends_with("fake-cli")));
+        assert!(bin_shims(&root, "fake-cli").iter().all(|s| s.exists()), "dry_run 不得删 shim");
+        assert!(outcome.key_tools.is_empty());
+
+        // 真实执行（node.exe 缺失 → 降级直删）：包目录与 shim 全部消失
+        let mut outcome = GlobalUninstallOutcome {
+            dry_run: false, would_remove: vec![], freed_bytes: 0,
+            removed: vec![], failed: vec![], key_tools: vec![],
+        };
+        nodejs_uninstall(&root, &nm, &["fake-cli".into()], false, &mut outcome);
+        assert_eq!(outcome.removed, vec!["fake-cli".to_string()]);
+        assert_eq!(outcome.failed.len(), 0);
+        assert!(!pkg.exists(), "包目录应被删除");
+        for shim in bin_shims(&root, "fake-cli") {
+            assert!(!shim.exists(), "shim 应被删除: {}", shim.display());
+        }
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn nodejs_uninstall_reports_missing_package() {
+        let root = std::env::temp_dir().join(format!("vfox_gp_missing_{}", std::process::id()));
+        let nm = root.join("node_modules");
+        fs::create_dir_all(&nm).unwrap();
+        let mut outcome = GlobalUninstallOutcome {
+            dry_run: false, would_remove: vec![], freed_bytes: 0,
+            removed: vec![], failed: vec![], key_tools: vec![],
+        };
+        nodejs_uninstall(&root, &nm, &["not-installed".into()], false, &mut outcome);
+        assert!(outcome.removed.is_empty());
+        assert_eq!(outcome.failed[0].0, "not-installed");
+        assert_eq!(outcome.failed[0].1, "未安装");
+        let _ = fs::remove_dir_all(&root);
     }
 }

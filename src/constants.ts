@@ -115,3 +115,35 @@ export function formatBytes(bytes: number): string {
   return `${(bytes / (1024 * 1024 * 1024)).toFixed(2)} GB`;
 }
 
+
+/** 全局包条目（某 SDK 版本里安装的运行时全局包）。bins 是该包提供的命令行
+ *  工具名——卸载风险提示的依据。bytes 为 0 表示体积未知（python 侧 pip 不提供）。 */
+export interface GlobalPackageEntry {
+  name: string;
+  version: string | null;
+  bytes: number;
+  description: string | null;
+  bins: string[];
+}
+
+/** 全局包清单报告。warning 非空（"npm-missing" / "pip-failed:<detail>"）时
+ *  前端显示黄条并禁用单包操作。 */
+export interface GlobalPackagesReport {
+  sdk: string;
+  version: string;
+  runtimeBytes: number;
+  packagesBytes: number;
+  packages: GlobalPackageEntry[];
+  warning: string | null;
+}
+
+/** 卸载结果。dryRun 时 wouldRemove 是将删除的绝对路径清单、keyTools 命中
+ *  关键 CLI（前端红色强警告）。 */
+export interface GlobalUninstallOutcome {
+  dryRun: boolean;
+  wouldRemove: string[];
+  freedBytes: number;
+  removed: string[];
+  failed: [string, string][];
+  keyTools: string[];
+}
