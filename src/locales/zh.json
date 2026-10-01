@@ -108,7 +108,13 @@
     "newVersionBadge": "有新版 {{version}}",
     "newVersionHint": "点击安装 {{version}}",
     "toolVersionDrift": "项目需要 {{sdk}}@{{version}}",
-    "toolVersionInstall": "一键安装"
+    "toolVersionInstall": "一键安装",
+    "gpTrendTitle": "体积历史",
+    "gpTrendEmpty": "暂无历史采样——下次打开面板后开始记录",
+    "gpTrendColTime": "时间",
+    "gpTrendColPkgs": "全局包",
+    "gpTrendColRuntime": "运行时",
+    "gpTrendColDelta": "较上次"
   },
   "project": {
     "history": "项目版本历史",

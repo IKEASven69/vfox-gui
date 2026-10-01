@@ -108,7 +108,13 @@
     "newVersionBadge": "New {{version}}",
     "newVersionHint": "Click to install {{version}}",
     "toolVersionDrift": "Project requires {{sdk}}@{{version}}",
-    "toolVersionInstall": "Install"
+    "toolVersionInstall": "Install",
+    "gpTrendTitle": "Size history",
+    "gpTrendEmpty": "No samples yet — recording starts next time you open this panel",
+    "gpTrendColTime": "Time",
+    "gpTrendColPkgs": "Packages",
+    "gpTrendColRuntime": "Runtime",
+    "gpTrendColDelta": "Delta"
   },
   "project": {
     "history": "Project Version History",

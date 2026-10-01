@@ -172,6 +172,13 @@ export interface VfoxNetworkConfig {
   configPath: string;
 }
 
+/** 全局包体积趋势的一条采样（Rust record/read_trend_samples）。 */
+export interface TrendSample {
+  ts: string;
+  packagesBytes: number;
+  runtimeBytes: number;
+}
+
 
 /** 全局包条目（某 SDK 版本里安装的运行时全局包）。bins 是该包提供的命令行
  *  工具名——卸载风险提示的依据。bytes 为 0 表示体积未知（python 侧 pip 不提供）。 */

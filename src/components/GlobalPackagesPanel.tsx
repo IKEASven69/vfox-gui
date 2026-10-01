@@ -6,6 +6,7 @@ import type {
   GlobalPackageEntry,
   GlobalPackagesReport,
   GlobalUninstallOutcome,
+  TrendSample,
 } from "../constants";
 import { formatBytes } from "../constants";
 import ConfirmDialog from "./ConfirmDialog";
@@ -44,13 +45,24 @@ export default function GlobalPackagesPanel({ sdk, version, isCurrent, otherVers
   const [importSelected, setImportSelected] = useState<Set<string>>(new Set());
   const [migrating, setMigrating] = useState(false);
   const [importConfirming, setImportConfirming] = useState<GlobalMigrateOutcome | null>(null);
+  // ── 体积历史（C5，可折叠） ──
+  const [trendOpen, setTrendOpen] = useState(false);
+  const [trend, setTrend] = useState<TrendSample[] | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
     setLoadError(null);
     setSelected(new Set());
     try {
-      setReport(await invoke<GlobalPackagesReport>("global_packages", { sdk, version }));
+      const rep = await invoke<GlobalPackagesReport>("global_packages", { sdk, version });
+      setReport(rep);
+      // C5：每次成功加载记一笔体积采样（本地 JSONL，失败静默——纯增值功能）
+      invoke("record_trend_sample", {
+        sdk,
+        version,
+        packagesBytes: rep.packagesBytes,
+        runtimeBytes: rep.runtimeBytes,
+      }).catch(() => { /* 采样失败不影响面板 */ });
     } catch (e) {
       setLoadError(String(e));
     } finally {
@@ -223,6 +235,19 @@ export default function GlobalPackagesPanel({ sdk, version, isCurrent, otherVers
       setMigrating(false);
     }
   }, [sdk, sourceVersion, version, importSelectedNames, load, onBytesChanged, t]);
+
+  // ── 体积历史（C5）：展开时按需读近 30 条采样 ──
+  const toggleTrend = useCallback(async () => {
+    const next = !trendOpen;
+    setTrendOpen(next);
+    if (next && trend === null) {
+      try {
+        setTrend(await invoke<TrendSample[]>("read_trend_samples", { sdk, version }));
+      } catch {
+        setTrend([]);
+      }
+    }
+  }, [trendOpen, trend, sdk, version]);
 
   return (
     <div
@@ -411,6 +436,59 @@ export default function GlobalPackagesPanel({ sdk, version, isCurrent, otherVers
               </button>
             </div>
           )}
+
+          {/* C5：体积历史（可折叠）——时间 | 全局包 | 运行时 | 与上次差值 */}
+          <div className="mt-1.5 pt-1.5" style={{ borderTop: "1px solid var(--hairline)" }}>
+            <button
+              onClick={() => void toggleTrend()}
+              className="text-[11px] font-medium transition-opacity hover:opacity-80"
+              style={{ color: "var(--text-tertiary)" }}
+            >
+              {trendOpen ? "▾ " : "▸ "}
+              {t("detail.gpTrendTitle")}
+            </button>
+            {trendOpen && (
+              trend === null ? (
+                <span className="ml-2 text-[11px]" style={{ color: "var(--text-tertiary)" }}>
+                  {t("common.loading")}
+                </span>
+              ) : trend.length === 0 ? (
+                <div className="mt-1 text-[11px]" style={{ color: "var(--text-tertiary)" }}>
+                  {t("detail.gpTrendEmpty")}
+                </div>
+              ) : (
+                <div className="mt-1">
+                  <div className="flex gap-3 text-[10px] font-semibold uppercase tracking-wide px-1"
+                    style={{ color: "var(--text-tertiary)" }}>
+                    <span className="w-24 shrink-0">{t("detail.gpTrendColTime")}</span>
+                    <span className="flex-1 text-right">{t("detail.gpTrendColPkgs")}</span>
+                    <span className="w-20 text-right shrink-0">{t("detail.gpTrendColRuntime")}</span>
+                    <span className="w-20 text-right shrink-0">{t("detail.gpTrendColDelta")}</span>
+                  </div>
+                  {trend.map((s, i) => {
+                    const delta = i > 0 ? s.packagesBytes - trend[i - 1].packagesBytes : null;
+                    return (
+                      <div key={`${s.ts}-${i}`} className="flex gap-3 text-[11px] px-1 py-0.5 tabular-nums"
+                        style={{ color: "var(--text-secondary)" }}>
+                        <span className="w-24 shrink-0 truncate">{s.ts}</span>
+                        <span className="flex-1 text-right">{formatBytes(s.packagesBytes)}</span>
+                        <span className="w-20 text-right shrink-0">{formatBytes(s.runtimeBytes)}</span>
+                        <span className="w-20 text-right shrink-0" style={{
+                          color: delta == null || delta === 0 ? "var(--text-tertiary)"
+                            : delta > 0 ? "var(--warning, #e6a700)" : "var(--success, #34a853)",
+                        }}>
+                          {delta == null ? "—"
+                            : delta === 0 ? "·"
+                            : delta > 0 ? `↑ ${formatBytes(delta)}`
+                            : `↓ ${formatBytes(-delta)}`}
+                        </span>
+                      </div>
+                    );
+                  })}
+                </div>
+              )
+            )}
+          </div>
         </>
       )}
 

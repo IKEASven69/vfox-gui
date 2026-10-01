@@ -2692,6 +2692,95 @@ pub async fn write_vfox_network_config(
     .map_err(|e| format!("后台任务失败: {}", e))?
 }
 
+// ── 全局包体积趋势（C5）：面板每次加载清单时记一笔，本地 JSONL 追加 ──
+
+#[derive(Debug, serde::Serialize, serde::Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct TrendSample {
+    /// 采样时间（本地时间 "YYYY-MM-DD HH:MM"，与项目历史同款格式）
+    pub ts: String,
+    pub sdk: String,
+    pub version: String,
+    pub packages_bytes: u64,
+    pub runtime_bytes: u64,
+}
+
+/// 趋势记录文件（vfox home 下，逐行 JSON）
+const TREND_FILE: &str = "gui-trend.jsonl";
+/// 面板「体积历史」最多展示的每版本条数
+const TREND_KEEP: usize = 30;
+
+/// 追加一条体积采样。轻量：一次 append + 一行 JSON，不做任何轮转
+/// （每行 ~120 字节，日常使用一年也就几十 KB）。
+#[tauri::command]
+pub async fn record_trend_sample(
+    sdk: String,
+    version: String,
+    packages_bytes: u64,
+    runtime_bytes: u64,
+) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        use std::io::Write;
+        let path = crate::vfox::vfox_home().join(TREND_FILE);
+        if let Some(parent) = path.parent() {
+            let _ = std::fs::create_dir_all(parent);
+        }
+        let file = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(&path)
+            .map_err(|e| format!("打开趋势记录失败: {e}"))?;
+        let mut w = std::io::BufWriter::new(file);
+        serde_json::to_writer(
+            &mut w,
+            &TrendSample { ts: chrono_now(), sdk, version, packages_bytes, runtime_bytes },
+        )
+        .map_err(|e| format!("序列化趋势记录失败: {e}"))?;
+        writeln!(w).map_err(|e| format!("写趋势记录失败: {e}"))?;
+        Ok(())
+    })
+    .await
+    .map_err(|e| format!("后台任务失败: {}", e))?
+}
+
+/// 解析 JSONL：过滤该 sdk+version 的采样，跳过坏行，取最近 keep 条
+/// （保持旧→新顺序，差值计算需要前一条）。
+fn parse_trend_lines(text: &str, sdk: &str, version: &str, keep: usize) -> Vec<TrendSample> {
+    let mut out: Vec<TrendSample> = Vec::new();
+    for line in text.lines() {
+        let line = line.trim();
+        if line.is_empty() {
+            continue;
+        }
+        if let Ok(s) = serde_json::from_str::<TrendSample>(line) {
+            if s.sdk == sdk && s.version == version {
+                out.push(s);
+            }
+        }
+    }
+    if out.len() > keep {
+        out.split_off(out.len() - keep)
+    } else {
+        out
+    }
+}
+
+/// 读某版本最近 30 条体积采样（旧→新）。文件不存在 → 空列表。
+#[tauri::command]
+pub async fn read_trend_samples(sdk: String, version: String) -> Result<Vec<TrendSample>, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let path = crate::vfox::vfox_home().join(TREND_FILE);
+        if !path.is_file() {
+            return Ok(Vec::new());
+        }
+        let text =
+            std::fs::read_to_string(&path).map_err(|e| format!("读取趋势记录失败: {e}"))?;
+        Ok(parse_trend_lines(&text, &sdk, &version, TREND_KEEP))
+    })
+    .await
+    .map_err(|e| format!("后台任务失败: {}", e))?
+}
+
 /// 带超时地跑一个子进程并捕获 stdout（stderr 丢弃）。超时会杀进程树。
 fn run_capture(program: &str, args: &[&str], timeout: Duration) -> Result<String, String> {
     use std::process::Stdio;
@@ -3450,5 +3539,34 @@ mod snapshot_share_tests {
         assert_eq!(sanitize_snapshot_name(r"a/b\c:d*e"), "a_b_c_d_e");
         assert_eq!(sanitize_snapshot_name("   "), "imported");
         assert_eq!(sanitize_snapshot_name("").len(), "imported".len());
+    }
+}
+
+#[cfg(test)]
+mod trend_tests {
+    use super::*;
+
+    #[test]
+    fn parse_trend_filters_by_version_skips_bad_lines_keeps_last() {
+        let text = concat!(
+            "not json\n",
+            r#"{"ts":"2026-10-01 10:00","sdk":"nodejs","version":"24.18.0","packagesBytes":100,"runtimeBytes":900}"#,
+            "\n",
+            r#"{"ts":"2026-10-01 11:00","sdk":"nodejs","version":"24.21.0","packagesBytes":500,"runtimeBytes":800}"#,
+            "\n",
+            r#"{"ts":"2026-10-01 12:00","sdk":"nodejs","version":"24.18.0","packagesBytes":120,"runtimeBytes":900}"#,
+            "\n",
+            r#"{"ts":"2026-10-01 13:00","sdk":"nodejs","version":"24.18.0","packagesBytes":90,"runtimeBytes":900}"#,
+            "\n",
+        );
+        let samples = parse_trend_lines(text, "nodejs", "24.18.0", 30);
+        assert_eq!(samples.len(), 3, "按 sdk+version 过滤，坏行跳过");
+        assert_eq!(samples[0].packages_bytes, 100, "保持旧→新顺序");
+        assert_eq!(samples[2].packages_bytes, 90);
+        // keep 截断取最近 N 条
+        let samples = parse_trend_lines(text, "nodejs", "24.18.0", 2);
+        assert_eq!(samples.len(), 2);
+        assert_eq!(samples[0].packages_bytes, 120, "截断后仍旧→新");
+        assert_eq!(samples[1].packages_bytes, 90);
     }
 }

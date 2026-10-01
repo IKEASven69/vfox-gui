@@ -175,6 +175,8 @@ pub fn run() {
             commands::write_vfox_network_config,
             commands::export_snapshot,
             commands::import_snapshot,
+            commands::record_trend_sample,
+            commands::read_trend_samples,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
